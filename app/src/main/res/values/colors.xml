@@ -1,0 +1,21 @@
+<resources>
+    <color name="up_purple">#1648C7</color>
+    <color name="up_purple_soft">#EAF0FF</color>
+    <color name="up_purple_dark">#082D91</color>
+    <color name="up_yellow">#FFC928</color>
+    <color name="up_yellow_dark">#D99C00</color>
+    <color name="up_green">#34D278</color>
+    <color name="up_green_dark">#18A85A</color>
+    <color name="up_bg">#F4F7FB</color>
+    <color name="up_surface">#FFFFFF</color>
+    <color name="up_surface_alt">#EEF3FA</color>
+    <color name="up_text">#0D1726</color>
+    <color name="up_text_muted">#65738A</color>
+    <color name="up_border">#D7E0EB</color>
+    <color name="up_success">#18A85A</color>
+    <color name="up_warning">#D99000</color>
+    <color name="up_danger">#D92D20</color>
+    <color name="up_info">#2563EB</color>
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+</resources>

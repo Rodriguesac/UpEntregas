@@ -1,0 +1,27 @@
+UP ENTREGAS 2.0.0 — PUBLICAR PELO TERMUX
+
+1) Descompacte na raiz:
+
+rm -rf ~/UpEntregas-v20
+mkdir -p ~/UpEntregas-v20
+unzip ~/storage/downloads/UP-Entregas-v2.0.0-PROFISSIONAL-GitHub.zip -d ~/UpEntregas-v20
+cd ~/UpEntregas-v20
+
+2) Envie para o GitHub:
+
+git init
+git branch -M main
+git remote add origin https://github.com/Rodriguesac/UpEntregas.git
+git add .
+git commit -m "UP Entregas v2.0.0 - profissional"
+git push -u origin main --force
+
+3) Verifique a compilação:
+
+gh run list --repo Rodriguesac/UpEntregas --workflow "Gerar APK UP Entregas" --limit 3
+
+4) Quando aparecer success, baixe o APK:
+
+mkdir -p ~/storage/downloads/UP-Entregas-v20
+gh run download --repo Rodriguesac/UpEntregas --dir ~/storage/downloads/UP-Entregas-v20
+find ~/storage/downloads/UP-Entregas-v20 -type f

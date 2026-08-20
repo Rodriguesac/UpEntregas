@@ -1,0 +1,5 @@
+// UP Entregas v1.2
+// Este arquivo é apenas um aviso. A regra COMPLETA está em ../firestore.rules.
+// Não publique este arquivo isoladamente.
+// O pacote completo parte das regras V10 conhecidas e acrescenta entregadores/rides/rotas/acertos/ocorrências.
+// Antes de publicar, compare com a regra atualmente ativa no Firebase Console, pois o deploy via CLI substitui a regra ativa.

@@ -1,0 +1,22 @@
+UP ENTREGAS V2.2 — TERMUX
+
+Depois de baixar UP-Entregas-v2.2.0-SINCRONIA-ESTADOS-GitHub.zip:
+
+rm -rf ~/UpEntregas-v22
+mkdir -p ~/UpEntregas-v22
+unzip ~/storage/downloads/UP-Entregas-v2.2.0-SINCRONIA-ESTADOS-GitHub.zip -d ~/UpEntregas-v22
+cd ~/UpEntregas-v22
+
+git init
+git branch -M main
+git remote remove origin 2>/dev/null
+git remote add origin https://github.com/Rodriguesac/UpEntregas.git
+git add .
+git commit -m "UP Entregas v2.2.0 - protocolo V3 e rotas"
+git push -u origin main --force
+
+gh workflow run "Gerar APK UP Entregas" --repo Rodriguesac/UpEntregas
+gh run list --repo Rodriguesac/UpEntregas --workflow "Gerar APK UP Entregas" --limit 3
+
+REGRAS FIRESTORE (uma vez):
+firebase deploy --only firestore:rules --project rodrigues-d6566

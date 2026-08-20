@@ -1,0 +1,22 @@
+UP ENTREGAS V2.4.0 — PUBLICAR PELO TERMUX
+
+rm -rf ~/UpEntregas-v24
+mkdir -p ~/UpEntregas-v24
+
+unzip ~/storage/downloads/UP-Entregas-v2.4.0-ROTA-PREMIUM-GitHub.zip -d ~/UpEntregas-v24
+cd ~/UpEntregas-v24
+
+./scripts/validar-v240.sh
+
+git init
+git branch -M main
+git remote remove origin 2>/dev/null
+git remote add origin https://github.com/Rodriguesac/UpEntregas.git
+
+git add .
+git commit -m "UP Entregas v2.4 - rota premium"
+git push -u origin main --force
+
+gh workflow run "Gerar APK UP Entregas" --repo Rodriguesac/UpEntregas
+
+gh run list --repo Rodriguesac/UpEntregas --workflow "Gerar APK UP Entregas" --limit 3

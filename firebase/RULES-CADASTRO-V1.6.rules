@@ -1,0 +1,28 @@
+    // Cadastro + perfil do entregador. Novas contas usam o UID do Firebase Auth como ID do documento.
+    match /entregadores/{driverId} {
+      allow read: if isAdmin() || own(driverId);
+      allow create: if isAdmin() || (own(driverId) &&
+        request.resource.data.authUid == request.auth.uid &&
+        request.resource.data.aprovado == false &&
+        request.resource.data.ativo == false &&
+        request.resource.data.statusAprovacao == 'PENDENTE');
+      allow delete: if isAdmin();
+      allow update: if isAdmin() || (own(driverId) && (
+        // Enquanto aguarda análise, o próprio entregador pode corrigir somente dados cadastrais.
+        (resource.data.aprovado != true && request.resource.data.aprovado != true && request.resource.data.ativo != true &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'nome','email','cpf','nascimento','telefone','cep','rua','numero','bairro','cidade',
+            'tipoVeiculo','marcaVeiculo','modeloVeiculo','corVeiculo','placa','pixTipo','pixChave','pixTitular',
+            'fotoUrl','documentoUrl','authUid','origemCadastro','appVersionCadastro','cadastroEnviadoEm','updatedAt',
+            'statusCadastro','statusAprovacao','motivoCorrecao'
+          ])) ||
+        // Depois de aprovado, o app altera apenas estado operacional.
+        (isDriver() && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'online','status','statusOnline','statusOperacional','aceitaNovasOfertas','coords','localizacaoAtualizadaEm','localizacaoOrigem',
+          'rastreamentoAtivo','rastreamento','corridaAtiva','emCorrida','corridaAtualId','currentRideId','rideAtualId','missaoAtualId','missaoAtualTipo',
+          'fcmToken','pushToken','tokenPush','tokenAtualizadoEm','tokenUpdatedAt','ultimaAceitacaoEm','ultimaConclusaoEm','ultimaMissaoEncerradaId',
+          'ultimaOcorrenciaEm','ultimaOcorrenciaId','ultimaOcorrenciaMotivo','recebimentoAtualizadoEm','recebimentoStatus','acerto','totalEntregas','saldoLiquido',
+          'ultimoLoginEm','lastLoginAt','appVersion','platform','ofertaAtualId','financeiro','updatedAt'
+        ]))
+      ));
+    }

@@ -1,0 +1,20 @@
+UP ENTREGAS V1.6 — PUBLICAÇÃO
+
+ANTES DO TESTE DO CADASTRO NOVO:
+1. Firebase Console > Authentication > Sign-in method > ative Email/Password.
+2. Firestore Database > Rules > substitua/publice o conteúdo de firestore.rules deste pacote.
+3. No GitHub do UP Entregas, substitua os arquivos do projeto por este pacote e execute o workflow “Gerar APK UP Entregas”.
+4. Instale o APK gerado.
+5. Publique o ZIP do GADM V17 no Netlify.
+
+TESTE MÍNIMO:
+- criar conta no UP Entregas;
+- confirmar que aparece em GADM > Entregas & UP > Entregadores > Pendentes;
+- pedir correção e conferir mensagem no app;
+- aprovar;
+- entrar novamente e ficar disponível;
+- mandar uma corrida controlada pelo GADM.
+
+IMPORTANTE:
+Novas contas usam o UID do Firebase Authentication como ID operacional no Firestore.
+A base V1.5 de corridas foi preservada.
