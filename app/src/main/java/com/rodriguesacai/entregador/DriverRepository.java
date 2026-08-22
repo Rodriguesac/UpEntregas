@@ -471,6 +471,7 @@ public class DriverRepository {
             DocumentSnapshot pedido = pedidoRef == null ? null : tx.get(pedidoRef);
             DocumentSnapshot rota = rotaRef == null ? null : tx.get(rotaRef);
 
+            boolean shareWithCustomer = customerTrackingEnabled(r, pedido);
             Map<String, Object> m = stageMap(driverId, rideId, status, deliveryStatus, timestampField);
             if ("COLETANDO".equals(status)) {
                 m.put("pickupStartedAt", FieldValue.serverTimestamp());
@@ -479,7 +480,7 @@ public class DriverRepository {
             if ("EM_ENTREGA".equals(status)) {
                 m.put("deliveryStartedAt", FieldValue.serverTimestamp());
                 m.put("saiuEntregaEm", FieldValue.serverTimestamp());
-                m.put("rastreamentoVisivelCliente", true);
+                m.put("rastreamentoVisivelCliente", shareWithCustomer);
                 m.put("aguardandoCodigoEntrega", true);
             }
             if ("NO_CLIENTE".equals(status)) {
@@ -496,7 +497,7 @@ public class DriverRepository {
                 if ("EM_ENTREGA".equals(status)) {
                     pm.put("deliveryStartedAt", FieldValue.serverTimestamp());
                     pm.put("saiuEntregaEm", FieldValue.serverTimestamp());
-                    pm.put("rastreamentoVisivelCliente", true);
+                    pm.put("rastreamentoVisivelCliente", shareWithCustomer);
                     pm.put("aguardandoCodigoEntrega", true);
                 }
                 if ("NO_CLIENTE".equals(status)) {
@@ -777,6 +778,22 @@ public class DriverRepository {
             }
             if (!ids.contains(orderId)) ids.add(orderId);
 
+            List<String> trackingOrderIds = new ArrayList<>();
+            Object trackingRaw = r.get("rastreamentoPedidosHabilitados");
+            if (trackingRaw instanceof List) {
+                for (Object value : (List<?>) trackingRaw) {
+                    String id = value == null ? "" : String.valueOf(value).trim();
+                    if (!id.isEmpty() && !trackingOrderIds.contains(id)) trackingOrderIds.add(id);
+                }
+            } else if (customerTrackingEnabled(r, null)) {
+                trackingOrderIds.addAll(routeOrderIds(r));
+            }
+            if (customerTrackingEnabled(order, linkedRide)) {
+                if (!trackingOrderIds.contains(orderId)) trackingOrderIds.add(orderId);
+            } else {
+                trackingOrderIds.remove(orderId);
+            }
+
             List<Map<String,Object>> stops = routeStops(r);
             Object proposedStopsRaw = comp.get("paradasPropostas");
             if (proposedStopsRaw instanceof List) {
@@ -801,6 +818,7 @@ public class DriverRepository {
 
             Map<String,Object> rm = new HashMap<>();
             rm.put("pedidoIds", ids); rm.put("pedidosIds", ids); rm.put("paradas", stops);
+            rm.put("rastreamentoPedidosHabilitados", trackingOrderIds);
             rm.put("qtdPedidos", ids.size()); rm.put("quantidadePedidos", ids.size());
             Object newKm = comp.get("novoKm"); if (newKm instanceof Number) rm.put("kmEstimado", ((Number)newKm).doubleValue());
             Object newFee = comp.get("novoRepasse"); if (newFee instanceof Number) { rm.put("valorRepasseEntregador", ((Number)newFee).doubleValue()); rm.put("repasseTotal", ((Number)newFee).doubleValue()); }
@@ -1069,6 +1087,7 @@ public class DriverRepository {
             List<DocumentSnapshot> orders = new ArrayList<>();
             for (String id : ids) orders.add(tx.get(db.collection("pedidos").document(id)));
 
+            boolean routeTrackingEnabled = routeHasCustomerTracking(r);
             Map<String, Object> rm = stageMap(driverId, routeId, "EM_ENTREGA", "SAIU_PARA_ENTREGA", "retiradoEm");
             rm.put("rotaAberta", false);
             rm.put("upRouteOpen", false);
@@ -1078,7 +1097,7 @@ public class DriverRepository {
             rm.put("indiceParadaAtual", 0);
             rm.put("deliveryStartedAt", FieldValue.serverTimestamp());
             rm.put("saiuEntregaEm", FieldValue.serverTimestamp());
-            rm.put("rastreamentoVisivelCliente", true);
+            rm.put("rastreamentoVisivelCliente", routeTrackingEnabled);
             rm.put("aguardandoCodigoEntrega", false);
             tx.update(route, rm);
 
@@ -1087,7 +1106,7 @@ public class DriverRepository {
                 Map<String, Object> pm = pedidoStageMap(driverId, routeId, "SAIU_PARA_ENTREGA", "retiradoEm");
                 pm.put("deliveryStartedAt", FieldValue.serverTimestamp());
                 pm.put("saiuEntregaEm", FieldValue.serverTimestamp());
-                pm.put("rastreamentoVisivelCliente", true);
+                pm.put("rastreamentoVisivelCliente", customerTrackingEnabled(o, r));
                 pm.put("aguardandoCodigoEntrega", false);
                 tx.update(o.getReference(), pm);
             }
@@ -1185,7 +1204,7 @@ public class DriverRepository {
                 rm.put("paradas", stops);
                 rm.put("recebidoAcumulado", totalReceived);
                 rm.put("aguardandoCodigoEntrega", false);
-                rm.put("rastreamentoVisivelCliente", true);
+                rm.put("rastreamentoVisivelCliente", routeHasCustomerTracking(r));
                 tx.update(route, rm);
                 Map<String, Object> dm = new HashMap<>();
                 dm.put("status", "Ocupado");
@@ -1287,7 +1306,7 @@ public class DriverRepository {
         return db.collection("entregadores").document(driverId).set(m, SetOptions.merge());
     }
 
-    /** Grava GPS no entregador e na missão atual. */
+    /** Grava GPS no entregador e na missão atual; em rotas, espelha somente para pedidos com mapa habilitado. */
     public Task<Void> saveMissionLocation(String driverId, double lat, double lng, float accuracy, float speed, float bearing,
                                           String missionId, String missionType, boolean visibleToCustomer) {
         if ("rotas_entrega".equals(missionType)) {
@@ -1306,17 +1325,30 @@ public class DriverRepository {
             rm.put("localizacaoEntregador", coords);
             rm.put("entregadorLat", lat); rm.put("entregadorLng", lng);
             rm.put("localizacaoEntregadorAtualizadaEm", FieldValue.serverTimestamp());
-            rm.put("rastreamentoVisivelCliente", visibleToCustomer);
             rm.put("updatedAt", FieldValue.serverTimestamp());
-            WriteBatch batch = db.batch();
-            batch.set(db.collection("entregadores").document(driverId), dm, SetOptions.merge());
-            batch.set(db.collection("rotas_entrega").document(missionId), rm, SetOptions.merge());
-            return batch.commit();
+            DocumentReference routeRef = db.collection("rotas_entrega").document(missionId);
+            return routeRef.get().continueWithTask(routeTask -> {
+                DocumentSnapshot route = routeTask.getResult();
+                WriteBatch batch = db.batch();
+                batch.set(db.collection("entregadores").document(driverId), dm, SetOptions.merge());
+                batch.set(routeRef, rm, SetOptions.merge());
+                if (visibleToCustomer) {
+                    for (String orderId : routeOrderIds(route)) {
+                        if (!routeTrackingEnabledForOrder(route, orderId)) continue;
+                        Map<String, Object> pm = new HashMap<>(rm);
+                        pm.put("entregadorId", driverId);
+                        pm.put("driverId", driverId);
+                        pm.put("rotaAtualId", missionId);
+                        batch.set(db.collection("pedidos").document(orderId), pm, SetOptions.merge());
+                    }
+                }
+                return batch.commit();
+            });
         }
         return saveLocation(driverId, lat, lng, accuracy, speed, bearing, missionId, visibleToCustomer);
     }
 
-    /** Grava GPS no entregador, corrida e pedido relacionado. Cliente só exibe quando rastreamentoVisivelCliente=true. */
+    /** Grava GPS interno e só espelha no pedido quando a etapa e a preferência permitem o mapa do cliente. */
     public Task<Void> saveLocation(String driverId, double lat, double lng, float accuracy, float speed, float bearing,
                                    String rideId, boolean visibleToCustomer) {
         Map<String, Object> coords = new HashMap<>();
@@ -1344,7 +1376,6 @@ public class DriverRepository {
         rm.put("entregadorAccuracy", accuracy);
         rm.put("entregadorSpeed", speed);
         rm.put("localizacaoEntregadorAtualizadaEm", FieldValue.serverTimestamp());
-        rm.put("rastreamentoVisivelCliente", visibleToCustomer);
         rm.put("updatedAt", FieldValue.serverTimestamp());
 
         DocumentReference driverRef = db.collection("entregadores").document(driverId);
@@ -1360,8 +1391,9 @@ public class DriverRepository {
             batch.update(driverRef, dm);
             batch.update(rideRef, rm);
             if (task.isSuccessful() && task.getResult() != null && task.getResult().exists()) {
-                String pid = pedidoId(task.getResult());
-                if (!pid.isEmpty()) {
+                DocumentSnapshot mission = task.getResult();
+                String pid = pedidoId(mission);
+                if (visibleToCustomer && customerTrackingEnabled(mission, null) && !pid.isEmpty()) {
                     Map<String, Object> pm = new HashMap<>(rm);
                     pm.put("entregadorId", driverId);
                     pm.put("driverId", driverId);
@@ -1630,6 +1662,37 @@ public class DriverRepository {
     private static boolean isTerminal(DocumentSnapshot r) {
         String s = first(r, "status", "statusCorrida", "statusEntrega").toUpperCase(Locale.ROOT);
         return s.contains("CONCLUID") || s.contains("FINALIZ") || s.contains("ENTREGUE") || s.contains("CANCELAD");
+    }
+
+    private static boolean customerTrackingEnabled(DocumentSnapshot primary, DocumentSnapshot fallback) {
+        for (DocumentSnapshot snapshot : new DocumentSnapshot[]{primary, fallback}) {
+            if (snapshot == null || !snapshot.exists()) continue;
+            Boolean explicit = snapshot.getBoolean("rastreamentoClienteHabilitado");
+            if (explicit == null) explicit = snapshot.getBoolean("entrega.rastreamentoClienteHabilitado");
+            if (explicit != null) return explicit;
+        }
+        return true;
+    }
+
+    private static boolean routeTrackingEnabledForOrder(DocumentSnapshot route, String orderId) {
+        if (route != null && route.exists()) {
+            Object raw = route.get("rastreamentoPedidosHabilitados");
+            if (raw instanceof List) {
+                for (Object value : (List<?>) raw) {
+                    if (orderId.equals(String.valueOf(value))) return true;
+                }
+                return false;
+            }
+        }
+        return customerTrackingEnabled(route, null);
+    }
+
+    private static boolean routeHasCustomerTracking(DocumentSnapshot route) {
+        if (route != null && route.exists()) {
+            Object raw = route.get("rastreamentoPedidosHabilitados");
+            if (raw instanceof List) return !((List<?>) raw).isEmpty();
+        }
+        return customerTrackingEnabled(route, null);
     }
 
     private DocumentReference pedidoRef(DocumentSnapshot r) {

@@ -31,6 +31,7 @@ public class TrackingService extends Service {
     private String driverId = "";
     private String rideId = "";
     private boolean customerVisible = false;
+    private boolean customerTrackingEnabled = true;
     private String missionType = "rides";
     private ListenerRegistration missionListener;
     private final DriverRepository repo = new DriverRepository();
@@ -61,12 +62,9 @@ public class TrackingService extends Service {
 
         Session.saveMission(this, missionType, rideId);
         Session.saveCustomerVisible(this, customerVisible);
-        String text = customerVisible
-                ? "A caminho do cliente • localização ativa durante a missão"
-                : "Indo ao Rodrigues • localização ativa durante a missão";
         int type = Build.VERSION.SDK_INT >= 29 ? ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION : 0;
         ServiceCompat.startForeground(this, NotificationHelper.TRACKING_ID,
-                NotificationHelper.trackingNotification(this, rideId, missionType, text), type);
+                NotificationHelper.trackingNotification(this, rideId, missionType, trackingText()), type);
         startLocationUpdates();
         startMissionWatch();
         return START_STICKY;
@@ -74,10 +72,31 @@ public class TrackingService extends Service {
 
     private void startMissionWatch() {
         if (missionListener != null) { missionListener.remove(); missionListener = null; }
-        if (!"rotas_entrega".equals(missionType) || rideId.isEmpty()) return;
-        missionListener = repo.listenRoute(rideId, new DriverRepository.RideCallback() {
+        if (rideId.isEmpty()) return;
+        DriverRepository.RideCallback callback = new DriverRepository.RideCallback() {
             @Override public void onRide(com.google.firebase.firestore.DocumentSnapshot d) {
-                if (d != null && d.exists() && Boolean.TRUE.equals(d.getBoolean("complementoOfertaAtiva")) && !Boolean.FALSE.equals(d.getBoolean("rotaAberta"))) {
+                if (d == null || !d.exists()) {
+                    stopSelf();
+                    return;
+                }
+                UpState state = UpState.from(d);
+                if (state.terminal()) {
+                    stopSelf();
+                    return;
+                }
+                customerVisible = state.deliveryPhase();
+                Boolean explicit = d.getBoolean("rastreamentoClienteHabilitado");
+                customerTrackingEnabled = explicit == null || explicit;
+                if ("rotas_entrega".equals(missionType)) {
+                    Object enabledOrders = d.get("rastreamentoPedidosHabilitados");
+                    if (enabledOrders instanceof java.util.List) {
+                        customerTrackingEnabled = !((java.util.List<?>) enabledOrders).isEmpty();
+                    }
+                }
+                Session.saveCustomerVisible(TrackingService.this, customerVisible);
+                updateForegroundNotification();
+
+                if ("rotas_entrega".equals(missionType) && Boolean.TRUE.equals(d.getBoolean("complementoOfertaAtiva")) && !Boolean.FALSE.equals(d.getBoolean("rotaAberta"))) {
                     OfferAlertPlayer.start(TrackingService.this, "complemento:" + rideId);
                     NotificationHelper.notifyNewRoute(TrackingService.this, rideId, "+1",
                             "Novo pedido disponível para sua rota • abra o UP para aceitar ou recusar.");
@@ -86,7 +105,26 @@ public class TrackingService extends Service {
                 }
             }
             @Override public void onError(Exception e) { }
-        });
+        };
+        missionListener = "rotas_entrega".equals(missionType)
+                ? repo.listenRoute(rideId, callback)
+                : repo.listenRide(rideId, callback);
+    }
+
+    private String trackingText() {
+        if (customerVisible && customerTrackingEnabled) {
+            return "A caminho do cliente • mapa compartilhado durante a entrega";
+        }
+        if (customerVisible) {
+            return "A caminho do cliente • GPS interno da missão ativo";
+        }
+        return "A caminho da loja • GPS interno da missão ativo";
+    }
+
+    private void updateForegroundNotification() {
+        int type = Build.VERSION.SDK_INT >= 29 ? ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION : 0;
+        ServiceCompat.startForeground(this, NotificationHelper.TRACKING_ID,
+                NotificationHelper.trackingNotification(this, rideId, missionType, trackingText()), type);
     }
 
     private void startLocationUpdates() {

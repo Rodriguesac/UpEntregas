@@ -88,7 +88,8 @@ service cloud.firestore {
           'rejeitadaPor','lastRejectedBy','motivoRejeicao','rejeitadaEm','pendenteGestor','acaoNecessariaGestor',
           'pagamentoRecebidoPeloEntregador','acerto','financeiro','financeiroConferidoPeloApp','updatedAt','atualizadoEm','statusAtualizadoEm',
           'lastExpiredFor','chegouLojaEm','retiradoEm','chegouClienteEm','entregadorId','entregadorUid','driverId','corridaAtualId','ultimaAcaoEntregador',
-          'rotaId','rotaAtualId','rotaPlanejadaId','rotaPlanejadaOrdem','rotaPlanejada','rotaComplementoOfertaId','rotaComplementoEntregadorId'
+          'rotaId','rotaAtualId','rotaPlanejadaId','rotaPlanejadaOrdem','rotaPlanejada','rotaComplementoOfertaId','rotaComplementoEntregadorId',
+          'localizacaoEntregador','entregadorLat','entregadorLng','entregadorAccuracy','entregadorSpeed','localizacaoEntregadorAtualizadaEm'
         ]));
       allow delete: if isAdmin();
     }
@@ -136,7 +137,7 @@ service cloud.firestore {
           'rejeitadaPor','lastRejectedBy','ultimoRejeitadoPor','rejectionReason','motivoRejeicao','rejeitadaEm','rejectedDriverIds','rejeitados',
           'lastExpiredFor','expiredDriverIds','pickupStartedAt','chegouColetaEm','chegouLojaEm','retiradoEm','deliveryStartedAt','saiuEntregaEm','arrivedClientAt','chegouClienteEm','aguardandoCodigoEntrega',
           'concluidaEm','entregueEm','finishedAt','finalizado','pagamentoRecebidoPeloEntregador','acerto','financeiro','financeiroConferidoPeloApp',
-          'localizacaoEntregador','localizacaoEntregadorAtualizadaEm','complementoOfertaAtiva','complementoOferta','complementoRouteId','complementoAceito','ocorrenciaAtiva','statusOcorrencia','ultimaOcorrenciaId','ultimaOcorrenciaMotivo','ultimaOcorrenciaEm'
+          'localizacaoEntregador','entregadorLat','entregadorLng','entregadorAccuracy','entregadorSpeed','localizacaoEntregadorAtualizadaEm','complementoOfertaAtiva','complementoOferta','complementoRouteId','complementoAceito','ocorrenciaAtiva','statusOcorrencia','ultimaOcorrenciaId','ultimaOcorrenciaMotivo','ultimaOcorrenciaEm'
         ]));
       match /rejections/{id} {
         allow read: if isAdmin() || (isDriver() && resource.data.driverId == request.auth.uid);
@@ -154,7 +155,7 @@ service cloud.firestore {
           'pendenteGestor','acaoNecessariaGestor','rejeitadaPor','lastRejectedBy','ultimoRejeitadoPor','rejectionReason','motivoRejeicao','rejeitadaEm','lastExpiredFor',
           'pickupStartedAt','chegouColetaEm','chegouLojaEm','retiradoEm','deliveryStartedAt','saiuEntregaEm','arrivedClientAt','chegouClienteEm','concluidaEm','entregueEm','finishedAt','finalizado','aguardandoCodigoEntrega',
           'rastreamentoVisivelCliente','pagamentoRecebidoPeloEntregador','acerto','financeiro','financeiroConferidoPeloApp','updatedAt','statusAtualizadoEm','ultimaAcaoEntregador','ocorrenciaAtiva','statusOcorrencia','ultimaOcorrenciaId','ultimaOcorrenciaMotivo','ultimaOcorrenciaEm',
-          'tipo','acceptedAt','aceitaEm','indiceParadaAtual','paradas','rotaAberta','bloqueadaParaNovosPedidos','entregasConcluidas','recebidoAcumulado','pedidoIds','pedidosIds','qtdPedidos','quantidadePedidos','kmEstimado','valorRepasseEntregador','repasseTotal','complementoOfertaAtiva','complementoOferta','complementoLinkedRideId','complementoAceito','complementoRespondidoEm','complementoRejeitadoPor','complementoMotivoRejeicao',
+          'tipo','acceptedAt','aceitaEm','indiceParadaAtual','paradas','rotaAberta','bloqueadaParaNovosPedidos','entregasConcluidas','recebidoAcumulado','pedidoIds','pedidosIds','qtdPedidos','quantidadePedidos','kmEstimado','valorRepasseEntregador','repasseTotal','rastreamentoPedidosHabilitados','complementoOfertaAtiva','complementoOferta','complementoLinkedRideId','complementoAceito','complementoRespondidoEm','complementoRejeitadoPor','complementoMotivoRejeicao',
           'deliveryStartedAt','saiuEntregaEm','arrivedClientAt','localizacaoEntregador','entregadorLat','entregadorLng','localizacaoEntregadorAtualizadaEm'
         ]));
     }

@@ -1,9 +1,9 @@
-# UP Entregas 2.3 — Material Native
+# UP Entregas 2.5 — Rastreamento opcional
 
 Aplicativo Android nativo do entregador do ecossistema Rodrigues Açaí e Cia / UP Entregas.
 
 ## Versão
-`2.3.0-material-native` — `versionCode 230`
+`2.5.0-rastreamento-opcional` — `versionCode 250`
 
 ## Princípio do produto
 O entregador deve enxergar a **próxima ação da entrega** com o mínimo de distração possível. Cadastro, login, formulários, confirmações, rotas, pagamentos e ocorrências são interfaces do próprio UP.
@@ -30,6 +30,9 @@ Veja `docs/PADRAO-VISUAL-UP.md` e `CHANGELOG-V2.3.md`.
 O GitHub Actions gera `UP-Entregas.apk` no workflow **Gerar APK UP Entregas**.
 
 Para publicar pelo Termux, veja `TERMUX-PUBLICAR-V2.3.txt`.
+
+## V2.5.0 — rastreamento opcional do cliente
+O GPS continua restrito à missão ativa. Depois da retirada, a localização é espelhada somente nos pedidos cujo mapa foi habilitado pelo Gestor; rotas múltiplas agora sincronizam as coordenadas com cada pedido autorizado. Consulte `CHANGELOG-V2.5.md`.
 
 
 ## v2.3.1 — retirada em rota múltipla
