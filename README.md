@@ -1,9 +1,9 @@
-# UP Entregas 2.5 — Rastreamento opcional
+# UP Entregas 2.6 — Métricas de entrega
 
 Aplicativo Android nativo do entregador do ecossistema Rodrigues Açaí e Cia / UP Entregas.
 
 ## Versão
-`2.5.0-rastreamento-opcional` — `versionCode 250`
+`2.6.0-metricas-entrega` — `versionCode 260`
 
 ## Princípio do produto
 O entregador deve enxergar a **próxima ação da entrega** com o mínimo de distração possível. Cadastro, login, formulários, confirmações, rotas, pagamentos e ocorrências são interfaces do próprio UP.
@@ -25,6 +25,16 @@ Em rota múltipla, pedidos adicionais podem entrar **somente antes da retirada**
 - formulários com `TextInputLayout`
 
 Veja `docs/PADRAO-VISUAL-UP.md` e `CHANGELOG-V2.3.md`.
+
+## V2.6.0 — distância percorrida confiável
+
+- O GPS soma a distância percorrida somente depois da retirada na loja.
+- Filtro de precisão, ruído parado e deslocamentos impossíveis reduz erros de GPS.
+- O acumulado sobrevive à reinicialização do serviço durante a mesma missão.
+- A métrica viaja dentro do objeto de localização já autorizado pelas regras atuais do Firestore.
+- Gestor e Cliente usam o mesmo valor para mostrar percurso, distância restante e ETA.
+
+Consulte `CHANGELOG-V2.6.md`.
 
 ## Build
 O GitHub Actions gera `UP-Entregas.apk` no workflow **Gerar APK UP Entregas**.

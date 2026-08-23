@@ -1308,11 +1308,14 @@ public class DriverRepository {
 
     /** Grava GPS no entregador e na missão atual; em rotas, espelha somente para pedidos com mapa habilitado. */
     public Task<Void> saveMissionLocation(String driverId, double lat, double lng, float accuracy, float speed, float bearing,
-                                          String missionId, String missionType, boolean visibleToCustomer) {
+                                          String missionId, String missionType, boolean visibleToCustomer,
+                                          double traveledDeliveryMeters) {
         if ("rotas_entrega".equals(missionType)) {
             Map<String, Object> coords = new HashMap<>();
             coords.put("lat", lat); coords.put("lng", lng); coords.put("accuracy", accuracy);
             coords.put("speed", speed); coords.put("bearing", bearing); coords.put("updatedAt", FieldValue.serverTimestamp());
+            coords.put("distanciaPercorridaEntregaMetros", traveledDeliveryMeters);
+            coords.put("metricasOrigem", "up_entregas_android_" + BuildConfig.VERSION_NAME);
             Map<String, Object> dm = new HashMap<>();
             dm.put("coords", coords);
             dm.put("localizacaoAtualizadaEm", FieldValue.serverTimestamp());
@@ -1345,12 +1348,13 @@ public class DriverRepository {
                 return batch.commit();
             });
         }
-        return saveLocation(driverId, lat, lng, accuracy, speed, bearing, missionId, visibleToCustomer);
+        return saveLocation(driverId, lat, lng, accuracy, speed, bearing, missionId,
+                visibleToCustomer, traveledDeliveryMeters);
     }
 
     /** Grava GPS interno e só espelha no pedido quando a etapa e a preferência permitem o mapa do cliente. */
     public Task<Void> saveLocation(String driverId, double lat, double lng, float accuracy, float speed, float bearing,
-                                   String rideId, boolean visibleToCustomer) {
+                                   String rideId, boolean visibleToCustomer, double traveledDeliveryMeters) {
         Map<String, Object> coords = new HashMap<>();
         coords.put("lat", lat);
         coords.put("lng", lng);
@@ -1358,6 +1362,8 @@ public class DriverRepository {
         coords.put("speed", speed);
         coords.put("bearing", bearing);
         coords.put("updatedAt", FieldValue.serverTimestamp());
+        coords.put("distanciaPercorridaEntregaMetros", traveledDeliveryMeters);
+        coords.put("metricasOrigem", "up_entregas_android_" + BuildConfig.VERSION_NAME);
 
         Map<String, Object> dm = new HashMap<>();
         dm.put("coords", coords);

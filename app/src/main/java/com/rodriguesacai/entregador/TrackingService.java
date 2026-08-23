@@ -3,6 +3,7 @@ package com.rodriguesacai.entregador;
 import android.Manifest;
 import android.app.Service;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.location.Location;
@@ -35,6 +36,12 @@ public class TrackingService extends Service {
     private String missionType = "rides";
     private ListenerRegistration missionListener;
     private final DriverRepository repo = new DriverRepository();
+    private Boolean lastDeliveryPhase;
+    private double traveledDeliveryMeters = 0d;
+    private double lastDistanceLat = Double.NaN;
+    private double lastDistanceLng = Double.NaN;
+    private float lastDistanceAccuracy = 0f;
+    private long lastDistanceTime = 0L;
 
     @Override public void onCreate() {
         super.onCreate();
@@ -62,6 +69,7 @@ public class TrackingService extends Service {
 
         Session.saveMission(this, missionType, rideId);
         Session.saveCustomerVisible(this, customerVisible);
+        loadDistanceState();
         int type = Build.VERSION.SDK_INT >= 29 ? ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION : 0;
         ServiceCompat.startForeground(this, NotificationHelper.TRACKING_ID,
                 NotificationHelper.trackingNotification(this, rideId, missionType, trackingText()), type);
@@ -84,7 +92,14 @@ public class TrackingService extends Service {
                     stopSelf();
                     return;
                 }
-                customerVisible = state.deliveryPhase();
+                boolean deliveryPhase = state.deliveryPhase();
+                if (lastDeliveryPhase == null) {
+                    if (!deliveryPhase) resetDistanceState();
+                } else if (deliveryPhase && !lastDeliveryPhase) {
+                    resetDistanceState();
+                }
+                lastDeliveryPhase = deliveryPhase;
+                customerVisible = deliveryPhase;
                 Boolean explicit = d.getBoolean("rastreamentoClienteHabilitado");
                 customerTrackingEnabled = explicit == null || explicit;
                 if ("rotas_entrega".equals(missionType)) {
@@ -141,15 +156,92 @@ public class TrackingService extends Service {
             @Override public void onLocationResult(LocationResult r) {
                 Location l = r.getLastLocation();
                 if (l != null && !driverId.isEmpty() && !rideId.isEmpty()) {
+                    updateTraveledDistance(l);
                     DriverRepository repo = new DriverRepository();
                     repo.saveMissionLocation(driverId, l.getLatitude(), l.getLongitude(),
-                            l.getAccuracy(), l.getSpeed(), l.getBearing(), rideId, missionType, customerVisible);
+                            l.getAccuracy(), l.getSpeed(), l.getBearing(), rideId, missionType,
+                            customerVisible, traveledDeliveryMeters);
                     DeviceStatus.Battery battery = DeviceStatus.battery(TrackingService.this);
                     if (battery.level >= 0) repo.saveDeviceTelemetry(driverId, battery.level, battery.charging);
                 }
             }
         };
         client.requestLocationUpdates(req, callback, getMainLooper());
+    }
+
+    /**
+     * Soma apenas o trecho depois da retirada. O filtro de precisão, deslocamento mínimo e
+     * velocidade impossível reduz o acúmulo de ruído quando o entregador está parado.
+     */
+    private void updateTraveledDistance(Location current) {
+        if (!customerVisible || !current.hasAccuracy() || current.getAccuracy() > 80f) return;
+        long time = current.getTime() > 0 ? current.getTime() : System.currentTimeMillis();
+        if (Double.isNaN(lastDistanceLat) || Double.isNaN(lastDistanceLng)) {
+            rememberDistancePoint(current, time);
+            return;
+        }
+
+        float[] result = new float[1];
+        Location.distanceBetween(lastDistanceLat, lastDistanceLng,
+                current.getLatitude(), current.getLongitude(), result);
+        double delta = result[0];
+        double noiseFloor = Math.max(8d, (lastDistanceAccuracy + current.getAccuracy()) * 0.35d);
+        double elapsedSeconds = Math.max(1d, Math.abs(time - lastDistanceTime) / 1000d);
+        double maximumPlausible = Math.max(120d, elapsedSeconds * 45d);
+        if (delta < noiseFloor) return;
+        if (delta > maximumPlausible) return;
+
+        traveledDeliveryMeters += delta;
+        rememberDistancePoint(current, time);
+    }
+
+    private void rememberDistancePoint(Location location, long time) {
+        lastDistanceLat = location.getLatitude();
+        lastDistanceLng = location.getLongitude();
+        lastDistanceAccuracy = location.getAccuracy();
+        lastDistanceTime = time;
+        SharedPreferences.Editor editor = distancePreferences().edit();
+        String key = distanceKey();
+        editor.putLong(key + "_meters", Double.doubleToRawLongBits(traveledDeliveryMeters));
+        editor.putLong(key + "_lat", Double.doubleToRawLongBits(lastDistanceLat));
+        editor.putLong(key + "_lng", Double.doubleToRawLongBits(lastDistanceLng));
+        editor.putFloat(key + "_accuracy", lastDistanceAccuracy);
+        editor.putLong(key + "_time", lastDistanceTime);
+        editor.apply();
+    }
+
+    private void loadDistanceState() {
+        SharedPreferences prefs = distancePreferences();
+        String key = distanceKey();
+        traveledDeliveryMeters = Double.longBitsToDouble(prefs.getLong(key + "_meters", Double.doubleToRawLongBits(0d)));
+        lastDistanceLat = Double.longBitsToDouble(prefs.getLong(key + "_lat", Double.doubleToRawLongBits(Double.NaN)));
+        lastDistanceLng = Double.longBitsToDouble(prefs.getLong(key + "_lng", Double.doubleToRawLongBits(Double.NaN)));
+        lastDistanceAccuracy = prefs.getFloat(key + "_accuracy", 0f);
+        lastDistanceTime = prefs.getLong(key + "_time", 0L);
+    }
+
+    private void resetDistanceState() {
+        traveledDeliveryMeters = 0d;
+        lastDistanceLat = Double.NaN;
+        lastDistanceLng = Double.NaN;
+        lastDistanceAccuracy = 0f;
+        lastDistanceTime = 0L;
+        String key = distanceKey();
+        distancePreferences().edit()
+                .remove(key + "_meters")
+                .remove(key + "_lat")
+                .remove(key + "_lng")
+                .remove(key + "_accuracy")
+                .remove(key + "_time")
+                .apply();
+    }
+
+    private SharedPreferences distancePreferences() {
+        return getSharedPreferences("up_tracking_metrics", MODE_PRIVATE);
+    }
+
+    private String distanceKey() {
+        return missionType + "_" + rideId;
     }
 
     @Override public void onDestroy() {
