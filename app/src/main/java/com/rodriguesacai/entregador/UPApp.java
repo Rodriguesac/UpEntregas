@@ -11,6 +11,7 @@ public class UPApp extends Application {
         super.onCreate();
         ThemePrefs.applySavedTheme(this);
         NotificationHelper.createChannels(this);
+        PixChangeSync.start();
         registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks() {
             @Override public void onActivityCreated(Activity activity, Bundle savedInstanceState) {}
             @Override public void onActivityStarted(Activity activity) { startedActivities++; }
