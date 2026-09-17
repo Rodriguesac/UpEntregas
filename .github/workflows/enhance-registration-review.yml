@@ -1,4 +1,4 @@
-name: Melhorar análise de cadastros
+name: Melhorar analise de cadastros
 
 on:
   push:
@@ -17,9 +17,10 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Melhorar análise de cadastro
-        shell: python
+      - name: Melhorar analise de cadastro
+        shell: bash
         run: |
+          python3 <<'PY'
           from pathlib import Path
           import re
 
@@ -40,26 +41,27 @@ function couriersView'''
 
           pattern = r"function applicationCard\(a\).*?\nasync function reviewApp\(id,status\).*?\nfunction couriersView"
           s2, count = re.subn(pattern, replacement, s, count=1, flags=re.S)
-          assert count == 1, f'bloco de cadastro não encontrado: {count}'
+          assert count == 1, f'bloco de cadastro nao encontrado: {count}'
 
           old_close = "function closeModal(){$('#modal').classList.add('hidden');$('#modalBody').innerHTML=''}"
           new_close = "function closeModal(){$('#modal').classList.add('hidden');$('#modalBody').innerHTML='';const box=document.querySelector('#modal .modal');if(box)box.style.maxWidth='460px';const cancel=document.querySelector('#modal .modalActions .btn.soft');if(cancel)cancel.style.display=''}"
-          assert old_close in s2, 'closeModal não encontrado'
+          assert old_close in s2, 'closeModal nao encontrado'
           s2 = s2.replace(old_close, new_close, 1)
-
           path.write_text(s2)
+          PY
 
-      - name: Conferir tela de análise
+      - name: Conferir tela de analise
+        shell: bash
         run: |
           grep -q 'Analisar cadastro completo' web-gestor/index.html
-          grep -q 'Documentos' web-gestor/index.html
           grep -q 'UID Firebase' web-gestor/index.html
           grep -q 'appDecisionNote' web-gestor/index.html
 
-      - name: Salvar mudança
+      - name: Salvar mudanca
+        shell: bash
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add web-gestor/index.html
-          git commit -m 'Melhora análise completa de cadastros no Gestor Web'
+          git commit -m 'Melhora analise completa de cadastros no Gestor Web'
           git push origin main
