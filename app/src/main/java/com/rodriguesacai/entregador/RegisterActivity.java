@@ -35,6 +35,7 @@ import java.util.Map;
 public class RegisterActivity extends AppCompatActivity {
     private final FirebaseAuth auth = FirebaseAuth.getInstance();
     private final FirebaseFirestore db = FirebaseFirestore.getInstance();
+    private final DriverRegistrationApi registrationApi = new DriverRegistrationApi();
     private final Map<String, String> data = new HashMap<>();
     private final Map<String, TextInputLayout> fields = new HashMap<>();
 
@@ -534,7 +535,16 @@ public class RegisterActivity extends AppCompatActivity {
 
         button.setText("Salvando cadastro…");
         db.collection("entregadores").document(user.getUid()).set(profile, SetOptions.merge())
-                .addOnSuccessListener(v -> uploadAssets(user.getUid(), button))
+                .addOnSuccessListener(v -> {
+                    button.setText("Enviando para análise…");
+                    registrationApi.submit(data)
+                            .addOnSuccessListener(status -> uploadAssets(user.getUid(), button))
+                            .addOnFailureListener(e -> {
+                                button.setEnabled(true);
+                                button.setText(editingExisting ? "Enviar atualização" : "Enviar cadastro");
+                                Ui.message(this, "O cadastro foi salvo, mas não chegou ao Gestor. Toque em enviar novamente.");
+                            });
+                })
                 .addOnFailureListener(e -> {
                     button.setEnabled(true);
                     button.setText(editingExisting ? "Enviar atualização" : "Enviar cadastro");
@@ -553,7 +563,8 @@ public class RegisterActivity extends AppCompatActivity {
                         if (!document.isEmpty()) update.put("documentoUrl", document);
                         update.put("updatedAt", FieldValue.serverTimestamp());
                         db.collection("entregadores").document(uid).set(update, SetOptions.merge())
-                                .addOnCompleteListener(t -> renderSuccess("Cadastro enviado para análise.", false));
+                                .addOnCompleteListener(t -> registrationApi.updateDocuments(photo, document)
+                                        .addOnCompleteListener(sync -> renderSuccess("Cadastro enviado para análise.", false)));
                     }
 
                     @Override public void onError(Exception e) {

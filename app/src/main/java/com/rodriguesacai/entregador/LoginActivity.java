@@ -26,6 +26,7 @@ import java.util.Locale;
 
 public class LoginActivity extends AppCompatActivity {
     private final DriverRepository repo = new DriverRepository();
+    private final DriverRegistrationApi registrationApi = new DriverRegistrationApi();
     private final FirebaseFirestore db = FirebaseFirestore.getInstance();
     private final FirebaseAuth auth = FirebaseAuth.getInstance();
     private boolean checkingProfile;
@@ -216,6 +217,11 @@ public class LoginActivity extends AppCompatActivity {
         }
         checkingProfile = true;
         renderChecking();
+        registrationApi.syncStatus()
+                .addOnCompleteListener(sync -> readProfileAfterManagerSync(user));
+    }
+
+    private void readProfileAfterManagerSync(FirebaseUser user) {
         db.collection("entregadores").document(user.getUid()).get()
                 .addOnSuccessListener(d -> {
                     checkingProfile = false;
