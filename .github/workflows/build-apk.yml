@@ -8,9 +8,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      ANDROID_HOME: /usr/local/lib/android/sdk
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
     steps:
       - name: Baixar projeto
@@ -22,13 +19,12 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # O runner ubuntu-latest já traz o Android SDK. O setup-android passou a
-      # solicitar o pacote legado `tools`, removido do repositório do Google.
-      - name: Aceitar licenças do Android SDK
-        run: |
-          echo "$ANDROID_HOME/cmdline-tools/20.0/bin" >> "$GITHUB_PATH"
-          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
-          yes | "$ANDROID_HOME/cmdline-tools/20.0/bin/sdkmanager" --licenses >/dev/null || true
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          # O pacote legado `tools` foi removido do repositório do Google.
+          # Instalamos abaixo somente plataforma e build-tools atuais.
+          packages: ''
 
       - name: Instalar Android 35
         run: |
