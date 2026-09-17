@@ -68,7 +68,9 @@ public class OnlineService extends Service {
 
         rideListener = repo.listenDirectedRides(driverId, new DriverRepository.RideCallback() {
             @Override public void onRide(UpDocument d) {
-                rideOffer = d;
+                // O endpoint também devolve a missão já aceita para recuperação
+                // de sessão; o serviço ONLINE só deve alertar ofertas pendentes.
+                rideOffer = d != null && Boolean.TRUE.equals(d.getBoolean("ofertaAtiva")) ? d : null;
                 refreshOffer();
             }
             @Override public void onError(Exception e) { showReconnect(); }
