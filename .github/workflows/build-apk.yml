@@ -77,3 +77,10 @@ jobs:
           name: UP-Gestor-APK
           path: UP-Gestor.apk
           if-no-files-found: error
+
+      - name: Disponibilizar UP Gestor Web para Netlify
+        uses: actions/upload-artifact@v4
+        with:
+          name: UP-Gestor-Web-Netlify
+          path: web-gestor/index.html
+          if-no-files-found: error
