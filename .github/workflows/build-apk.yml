@@ -19,8 +19,10 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Android SDK
-        uses: android-actions/setup-android@v4
+      # O runner ubuntu-latest já traz o Android SDK. O setup-android passou a
+      # solicitar o pacote legado `tools`, removido do repositório do Google.
+      - name: Aceitar licenças do Android SDK
+        run: yes | sdkmanager --licenses >/dev/null || true
 
       - name: Instalar Android 35
         run: |
