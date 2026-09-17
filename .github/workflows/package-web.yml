@@ -1,0 +1,26 @@
+name: Pacote UP Gestor Web
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'web-gestor/**'
+      - '.github/workflows/package-web.yml'
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar projeto
+        uses: actions/checkout@v6
+
+      - name: Conferir site
+        run: test -f web-gestor/index.html
+
+      - name: Disponibilizar pacote Netlify
+        uses: actions/upload-artifact@v4
+        with:
+          name: UP-Gestor-Web-Netlify
+          path: web-gestor/index.html
+          if-no-files-found: error
