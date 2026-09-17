@@ -1,0 +1,65 @@
+name: Melhorar análise de cadastros
+
+on:
+  push:
+    paths:
+      - '.github/workflows/enhance-registration-review.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar projeto
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Melhorar análise de cadastro
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          path = Path('web-gestor/index.html')
+          s = path.read_text()
+
+          replacement = r'''function pick(o,...keys){o=o||{};for(const k of keys){const v=o[k];if(v!==undefined&&v!==null&&String(v).trim()!=='')return v}return ''}
+function appStatusInfo(status){return({pending:['PENDENTE','#d97706'],approved:['APROVADO','#16a34a'],correction:['CORREÇÃO','#2563eb'],rejected:['REPROVADO','#dc2626'],blocked:['BLOQUEADO','#475467']})[status]||[String(status||'SEM STATUS').toUpperCase(),'#475467']}
+function infoBox(label,value){return `<div style="background:#f8fafc;border:1px solid #eef2f6;border-radius:12px;padding:11px;min-width:0"><small style="display:block;color:#667085;font-weight:800;margin-bottom:4px">${esc(label)}</small><div style="font-weight:800;word-break:break-word">${esc(value||'—')}</div></div>`}
+function infoSection(title,body){return `<section style="margin:0 0 16px"><div style="font-size:15px;font-weight:900;margin:0 0 8px">${esc(title)}</div>${body}</section>`}
+function infoGrid(items){return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px">${items.join('')}</div>`}
+function safeHttpUrl(v){v=String(v||'').trim();return /^https?:\/\//i.test(v)?v:''}
+function documentPreview(label,url){const safe=safeHttpUrl(url);if(!safe)return infoBox(label,'Não enviado');const u=esc(safe);return `<div style="border:1px solid #e4e7ec;border-radius:14px;overflow:hidden;background:#fff"><div style="padding:10px 12px;font-weight:900">${esc(label)}</div><img src="${u}" alt="${esc(label)}" style="display:block;width:100%;max-height:260px;object-fit:contain;background:#f8fafc" onerror="this.style.display='none'"><div style="padding:10px 12px"><a href="${u}" target="_blank" rel="noopener" class="btn soft" style="display:inline-block;text-decoration:none">Abrir arquivo</a></div></div>`}
+function applicationCard(a){const v=a.vehicle||{},status=appStatusInfo(a.status),vehicle=[pick(v,'tipo','type'),pick(v,'marca','brand'),pick(v,'modelo','model')].filter(Boolean).join(' ');return `<div class="card"><div class="row"><div class="grow"><div class="name big">${esc(a.full_name||'Entregador')}</div><div class="muted">${esc(a.email||'')}${a.phone?' • '+esc(a.phone):''}</div></div><span class="pill" style="background:${status[1]}">${status[0]}</span></div><div class="driverMeta"><div><small>CPF</small><b>${esc(a.cpf||'—')}</b></div><div><small>Veículo</small><b>${esc(vehicle||'—')}</b></div><div><small>Enviado</small><b>${esc(a.submitted_at?dateTime(a.submitted_at):'—')}</b></div><div><small>Última análise</small><b>${esc(a.reviewed_at?dateTime(a.reviewed_at):'Ainda não analisado')}</b></div></div>${a.rejection_reason?`<div class="alert">${esc(a.rejection_reason)}</div>`:''}<div class="actions"><button class="btn primary" onclick="openApplicationReview('${a.id}')">Analisar cadastro completo</button></div></div>`}
+function openApplicationReview(id){const a=APP.find(x=>x.id===id);if(!a){toast('Cadastro não encontrado.');return}const ad=a.address||{},v=a.vehicle||{},p=a.pix||{},d=a.documents||{},m=a.metadata||{},status=appStatusInfo(a.status),photo=pick(d,'photo_url','fotoUrl','photo','profile_url'),doc=pick(d,'document_url','documentoUrl','document','cnh_url');const body=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px"><div class="grow"><div class="name big">${esc(a.full_name||'Entregador')}</div><div class="muted">${esc(a.email||'')} ${a.phone?'• '+esc(a.phone):''}</div></div><span class="pill" style="background:${status[1]}">${status[0]}</span></div>${infoSection('Identificação',infoGrid([infoBox('Nome completo',a.full_name),infoBox('CPF',a.cpf),infoBox('Nascimento',a.birth_date),infoBox('Telefone',a.phone),infoBox('E-mail',a.email),infoBox('UID Firebase',a.firebase_uid)]))}${infoSection('Endereço',infoGrid([infoBox('CEP',pick(ad,'cep','zip')),infoBox('Rua',pick(ad,'rua','street')),infoBox('Número',pick(ad,'numero','number')),infoBox('Bairro',pick(ad,'bairro','district')),infoBox('Cidade',pick(ad,'cidade','city'))]))}${infoSection('Veículo',infoGrid([infoBox('Tipo',pick(v,'tipo','type')),infoBox('Marca',pick(v,'marca','brand')),infoBox('Modelo',pick(v,'modelo','model')),infoBox('Cor',pick(v,'cor','color')),infoBox('Placa',pick(v,'placa','plate'))]))}${infoSection('Recebimento / Pix',infoGrid([infoBox('Tipo da chave',pick(p,'tipo','type')),infoBox('Chave Pix',pick(p,'chave','key')),infoBox('Titular',pick(p,'titular','holder'))]))}${infoSection('Documentos',`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px">${documentPreview('Foto de perfil',photo)}${documentPreview('CNH / documento',doc)}</div>`)}${infoSection('Controle do cadastro',infoGrid([infoBox('Status atual',status[0]),infoBox('Enviado em',a.submitted_at?dateTime(a.submitted_at):''),infoBox('Atualizado em',a.updated_at?dateTime(a.updated_at):''),infoBox('Analisado em',a.reviewed_at?dateTime(a.reviewed_at):'Ainda não'),infoBox('Analisado por',a.reviewed_by||'—'),infoBox('Origem',pick(m,'source','origem')||'—'),infoBox('Versão do app',pick(m,'app_version','appVersion')||'—')]))}${a.notes?`<div class="card" style="background:#f8fafc"><b>Observações anteriores</b><div class="sub" style="margin-top:6px">${esc(a.notes)}</div></div>`:''}${a.rejection_reason?`<div class="alert"><b>Motivo registrado:</b> ${esc(a.rejection_reason)}</div>`:''}<div style="margin-top:18px;padding-top:16px;border-top:1px solid #e4e7ec"><div style="font-weight:900;margin-bottom:7px">Decisão desta análise</div><textarea id="appDecisionNote" class="field" rows="4" placeholder="Observação opcional para aprovação. Para correção, reprovação ou bloqueio, informe o motivo."></textarea><div class="actions"><button class="btn green" onclick="reviewApp('${a.id}','approved')">Aprovar cadastro</button><button class="btn blue" onclick="reviewApp('${a.id}','correction')">Solicitar correção</button><button class="btn red" onclick="reviewApp('${a.id}','rejected')">Reprovar</button><button class="btn soft" onclick="reviewApp('${a.id}','blocked')">Bloquear</button></div></div>`;openModal('Analisar cadastro — '+(a.full_name||'Entregador'),body,()=>closeModal(),'Fechar');const box=document.querySelector('#modal .modal');if(box)box.style.maxWidth='920px';const cancel=document.querySelector('#modal .modalActions .btn.soft');if(cancel)cancel.style.display='none'}
+async function reviewApp(id,status){const field=$('#appDecisionNote'),note=field?field.value.trim():'';if(status!=='approved'&&!note){toast('Informe o motivo antes de concluir esta decisão.');if(field)field.focus();return}if(status==='approved'&&!confirm('Confirmar aprovação deste cadastro?'))return;try{await admin('application_set',{id,status,reason:status==='approved'?'':note,notes:status==='approved'?note:null});closeModal();toast(status==='approved'?'Cadastro aprovado.':'Decisão registrada.');await refresh(false)}catch(e){toast(e.message)}}
+function couriersView'''
+
+          pattern = r"function applicationCard\(a\).*?\nasync function reviewApp\(id,status\).*?\nfunction couriersView"
+          s2, count = re.subn(pattern, replacement, s, count=1, flags=re.S)
+          assert count == 1, f'bloco de cadastro não encontrado: {count}'
+
+          old_close = "function closeModal(){$('#modal').classList.add('hidden');$('#modalBody').innerHTML=''}"
+          new_close = "function closeModal(){$('#modal').classList.add('hidden');$('#modalBody').innerHTML='';const box=document.querySelector('#modal .modal');if(box)box.style.maxWidth='460px';const cancel=document.querySelector('#modal .modalActions .btn.soft');if(cancel)cancel.style.display=''}"
+          assert old_close in s2, 'closeModal não encontrado'
+          s2 = s2.replace(old_close, new_close, 1)
+
+          path.write_text(s2)
+
+      - name: Conferir tela de análise
+        run: |
+          grep -q 'Analisar cadastro completo' web-gestor/index.html
+          grep -q 'Documentos' web-gestor/index.html
+          grep -q 'UID Firebase' web-gestor/index.html
+          grep -q 'appDecisionNote' web-gestor/index.html
+
+      - name: Salvar mudança
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add web-gestor/index.html
+          git commit -m 'Melhora análise completa de cadastros no Gestor Web'
+          git push origin main
