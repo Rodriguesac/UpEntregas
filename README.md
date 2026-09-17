@@ -1,9 +1,9 @@
-# UP Entregas 2.6 — Métricas de entrega
+# UP Entregas 2.7 — Supabase operacional
 
 Aplicativo Android nativo do entregador do ecossistema Rodrigues Açaí e Cia / UP Entregas.
 
 ## Versão
-`2.6.0-metricas-entrega` — `versionCode 260`
+`2.7.0-supabase-operacional` — `versionCode 270`
 
 ## Princípio do produto
 O entregador deve enxergar a **próxima ação da entrega** com o mínimo de distração possível. Cadastro, login, formulários, confirmações, rotas, pagamentos e ocorrências são interfaces do próprio UP.
@@ -25,6 +25,16 @@ Em rota múltipla, pedidos adicionais podem entrar **somente antes da retirada**
 - formulários com `TextInputLayout`
 
 Veja `docs/PADRAO-VISUAL-UP.md` e `CHANGELOG-V2.3.md`.
+
+## V2.7.0 — operação Supabase com transição segura
+
+- Novas entregas simples podem ser recebidas, aceitas e concluídas diretamente no Supabase.
+- Presença, bateria, equipamento, token FCM, etapas e GPS são sincronizados com o modelo operacional novo.
+- O backend valida o token Firebase e o cadastro aprovado do entregador antes de permitir qualquer ação.
+- As corridas e rotas antigas do Firestore continuam disponíveis durante a transição, sem mudar a tela nem a conta do entregador.
+- A confirmação de dinheiro para troco via Pix da versão 2.6.1 foi preservada.
+
+Consulte `CHANGELOG-V2.7.md`.
 
 ## V2.6.0 — distância percorrida confiável
 

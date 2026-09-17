@@ -82,7 +82,7 @@ public class TrackingService extends Service {
         if (missionListener != null) { missionListener.remove(); missionListener = null; }
         if (rideId.isEmpty()) return;
         DriverRepository.RideCallback callback = new DriverRepository.RideCallback() {
-            @Override public void onRide(com.google.firebase.firestore.DocumentSnapshot d) {
+            @Override public void onRide(UpDocument d) {
                 if (d == null || !d.exists()) {
                     stopSelf();
                     return;

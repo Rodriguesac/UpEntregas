@@ -32,6 +32,7 @@ import com.google.firebase.messaging.FirebaseMessaging;
 import com.google.android.material.switchmaterial.SwitchMaterial;
 import com.google.android.material.textfield.TextInputLayout;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.Locale;
@@ -42,7 +43,7 @@ public class MainActivity extends AppCompatActivity {
     private final DriverRepository repo = new DriverRepository();
     private String driverId = "";
     private String rideId = "";
-    private DocumentSnapshot ride;
+    private UpDocument ride;
     private ListenerRegistration offerListener;
     private ListenerRegistration routeOfferListener;
     private ListenerRegistration currentRideListener;
@@ -182,7 +183,7 @@ public class MainActivity extends AppCompatActivity {
         if (routeOfferListener != null) routeOfferListener.remove();
 
         offerListener = repo.listenDirectedRides(driverId, new DriverRepository.RideCallback() {
-            @Override public void onRide(DocumentSnapshot d) {
+            @Override public void onRide(UpDocument d) {
                 if (!online || hasActiveMission()) return;
                 if (d == null) {
                     if (ride != null && Boolean.TRUE.equals(ride.getBoolean("ofertaAtiva")) && "rides".equals(missionType)) clearCurrentRide(true);
@@ -191,13 +192,17 @@ public class MainActivity extends AppCompatActivity {
                 ride = d; rideId = d.getId(); missionType = "rides";
                 Session.saveMission(MainActivity.this, missionType, rideId);
                 currentTab = 1;
+                if (!Boolean.TRUE.equals(d.getBoolean("ofertaAtiva"))) {
+                    OnlineService.stop(MainActivity.this);
+                    listenCurrentRide();
+                }
                 render();
             }
             @Override public void onError(Exception e) { toast("Falha ao ouvir corridas: " + e.getMessage()); }
         });
 
         routeOfferListener = repo.listenDirectedRoutes(driverId, new DriverRepository.RideCallback() {
-            @Override public void onRide(DocumentSnapshot d) {
+            @Override public void onRide(UpDocument d) {
                 if (!online || hasActiveMission()) return;
                 if (d == null) {
                     if (ride != null && Boolean.TRUE.equals(ride.getBoolean("ofertaAtiva")) && "rotas_entrega".equals(missionType)) clearCurrentRide(true);
@@ -217,7 +222,7 @@ public class MainActivity extends AppCompatActivity {
         if (currentRideListener != null) currentRideListener.remove();
         if (rideId.isEmpty()) return;
         DriverRepository.RideCallback cb = new DriverRepository.RideCallback() {
-            @Override public void onRide(DocumentSnapshot d) {
+            @Override public void onRide(UpDocument d) {
                 if (d == null) { clearCurrentRide(true); return; }
                 if ("rotas_entrega".equals(missionType)) {
                     int nowCount = routeStopCount(d);
@@ -1728,7 +1733,7 @@ public class MainActivity extends AppCompatActivity {
         render();
     }
 
-    private void showPendingSettlements(ArrayList<DocumentSnapshot> docs) {
+    private void showPendingSettlements(ArrayList<UpDocument> docs) {
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
 
@@ -1736,7 +1741,7 @@ public class MainActivity extends AppCompatActivity {
             content.addView(Ui.muted(this, "Nenhum acerto aguardando conferência.", 13));
         } else {
             int shown = 0;
-            for (DocumentSnapshot d : docs) {
+            for (UpDocument d : docs) {
                 if (shown++ >= 12) break;
                 String order = DriverRepository.first(d, "codigoPedido", "numeroPedido", "pedidoId");
                 double received = firstNumber(d, "recebidoPeloEntregador", "valorBruto");
@@ -1760,7 +1765,7 @@ public class MainActivity extends AppCompatActivity {
         dialog.show();
     }
 
-    private static double firstNumber(DocumentSnapshot d, String... fields) {
+    private static double firstNumber(UpDocument d, String... fields) {
         for (String f : fields) {
             Object o = d.get(f);
             if (o instanceof Number) return ((Number) o).doubleValue();
@@ -1875,14 +1880,17 @@ public class MainActivity extends AppCompatActivity {
 
     private static String labelOrDash(String x) { return x == null || x.trim().isEmpty() ? "—" : x.trim(); }
 
-    private static Date docDate(DocumentSnapshot d) {
+    private static Date docDate(UpDocument d) {
         Object x = d.get("createdAt");
         if (x == null) x = d.get("criadoEm");
         if (x == null) x = d.get("updatedAt");
-        return x instanceof com.google.firebase.Timestamp ? ((com.google.firebase.Timestamp) x).toDate() : null;
+        if (x instanceof com.google.firebase.Timestamp) return ((com.google.firebase.Timestamp) x).toDate();
+        if (x instanceof Date) return (Date) x;
+        if (x instanceof String) try { return Date.from(Instant.parse((String) x)); } catch (Exception ignored) {}
+        return null;
     }
 
-    private static long docMillis(DocumentSnapshot d) {
+    private static long docMillis(UpDocument d) {
         Date x = docDate(d);
         return x == null ? 0L : x.getTime();
     }
@@ -2016,7 +2024,7 @@ public class MainActivity extends AppCompatActivity {
             if (currentTab != 1 || ride != null) return;
             holder.removeAllViews();
             int shown = 0;
-            for (DocumentSnapshot d : q.getDocuments()) {
+            for (UpDocument d : q.getDocuments()) {
                 if (shown++ >= 8) break;
                 String order = DriverRepository.first(d, "codigoPedido", "numeroPedido", "pedidoId");
                 String statusText = DriverRepository.first(d, "statusEntrega", "statusCorrida", "status");
@@ -2080,7 +2088,7 @@ public class MainActivity extends AppCompatActivity {
             long day = 24L * 60L * 60L * 1000L;
             double today = 0d, received = 0d, remit = 0d, toReceive = 0d;
             int countToday = 0;
-            for (DocumentSnapshot d : q.getDocuments()) {
+            for (UpDocument d : q.getDocuments()) {
                 Date created = docDate(d);
                 long age = created == null ? Long.MAX_VALUE : Math.max(0L, now - created.getTime());
                 if (age > day) continue;
@@ -2197,10 +2205,10 @@ public class MainActivity extends AppCompatActivity {
         repo.loadNotifications(driverId).addOnSuccessListener(q -> {
             if (currentTab != 4) return;
             holder.removeAllViews();
-            ArrayList<DocumentSnapshot> docs = new ArrayList<>(q.getDocuments());
+            ArrayList<UpDocument> docs = new ArrayList<>(q.getDocuments());
             docs.sort((a, b) -> Long.compare(docMillis(b), docMillis(a)));
             int shown = 0;
-            for (DocumentSnapshot d : docs) {
+            for (UpDocument d : docs) {
                 if (shown++ >= 20) break;
                 String title = DriverRepository.first(d, "title", "titulo", "categoria", "category");
                 String msg = DriverRepository.first(d, "message", "mensagem");
@@ -2389,7 +2397,7 @@ public class MainActivity extends AppCompatActivity {
             long day = 24L * 60L * 60L * 1000L;
             double today = 0d;
             int count = 0;
-            for (DocumentSnapshot d : q.getDocuments()) {
+            for (UpDocument d : q.getDocuments()) {
                 Date created = docDate(d);
                 if (created == null || now - created.getTime() > day) continue;
                 today += firstNumber(d, "taxaMotoboy", "valorCorrida", "valorRepasseEntregador");
@@ -2453,7 +2461,7 @@ public class MainActivity extends AppCompatActivity {
         return "rotas_entrega".equals(missionType) || DriverRepository.isMultiRoute(ride);
     }
 
-    private int routeStopCount(DocumentSnapshot d) {
+    private int routeStopCount(UpDocument d) {
         if (d == null || !d.exists()) return 0;
         return Math.max(DriverRepository.routeStops(d).size(), DriverRepository.routeOrderIds(d).size());
     }
@@ -2471,6 +2479,14 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private static double numberFrom(DocumentSnapshot d, String field) {
+        if (d == null || field == null) return 0d;
+        Object o = d.get(field);
+        if (o instanceof Number) return ((Number) o).doubleValue();
+        if (o instanceof String) try { return Double.parseDouble(((String) o).replace(",", ".")); } catch (Exception ignored) {}
+        return 0d;
+    }
+
+    private static double numberFrom(UpDocument d, String field) {
         if (d == null || field == null) return 0d;
         Object o = d.get(field);
         if (o instanceof Number) return ((Number) o).doubleValue();
@@ -2609,7 +2625,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private boolean isTerminal(DocumentSnapshot d) {
+    private boolean isTerminal(UpDocument d) {
         String x = (DriverRepository.s(d, "status") + " " + DriverRepository.s(d, "statusCorrida") + " " + DriverRepository.s(d, "statusEntrega")).toUpperCase(Locale.ROOT);
         return x.contains("CANCELAD") || x.contains("CONCLUID") || x.contains("FINALIZ") || x.contains("ENTREGUE") || x.contains("EXPIRADA") || x.contains("REJEITADA");
     }

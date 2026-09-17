@@ -1,5 +1,8 @@
 package com.rodriguesacai.entregador;
 
+import android.os.Handler;
+import android.os.Looper;
+
 import com.google.android.gms.tasks.Task;
 import com.google.android.gms.tasks.Tasks;
 import com.google.firebase.Timestamp;
@@ -22,9 +25,10 @@ import java.util.Map;
 
 public class DriverRepository {
     public interface DriverCallback { void onResult(DocumentSnapshot doc); void onError(Exception e); }
-    public interface RideCallback { void onRide(DocumentSnapshot doc); void onError(Exception e); }
+    public interface RideCallback { void onRide(UpDocument doc); void onError(Exception e); }
 
     private final FirebaseFirestore db = FirebaseFirestore.getInstance();
+    private final SupabaseDriverApi supabase = new SupabaseDriverApi();
 
     public void loadDriver(String id, DriverCallback cb) {
         db.collection("entregadores").document(id).get()
@@ -52,7 +56,8 @@ public class DriverRepository {
         m.put("statusOperacional", online ? "DISPONIVEL" : "INDISPONIVEL");
         m.put("appVersion", BuildConfig.VERSION_NAME);
         m.put("updatedAt", FieldValue.serverTimestamp());
-        return db.collection("entregadores").document(driverId).set(m, SetOptions.merge());
+        Task<Void> legacy = db.collection("entregadores").document(driverId).set(m, SetOptions.merge());
+        return Tasks.whenAll(legacy, supabase.presence(online));
     }
 
     public void loadUpConfig(DriverCallback cb) {
@@ -81,7 +86,8 @@ public class DriverRepository {
         m.put("telemetria", telemetry);
         m.put("appVersion", BuildConfig.VERSION_NAME);
         m.put("updatedAt", FieldValue.serverTimestamp());
-        return db.collection("entregadores").document(driverId).set(m, SetOptions.merge());
+        Task<Void> legacy = db.collection("entregadores").document(driverId).set(m, SetOptions.merge());
+        return Tasks.whenAll(legacy, supabase.telemetry(batteryLevel, charging));
     }
 
     public Task<Void> saveOperationalEquipment(String driverId, boolean hasCash, double cashAvailable,
@@ -101,12 +107,21 @@ public class DriverRepository {
         m.put("operacao", op);
         m.put("equipamentos", op);
         m.put("updatedAt", FieldValue.serverTimestamp());
-        return db.collection("entregadores").document(driverId).set(m, SetOptions.merge());
+        Task<Void> legacy = db.collection("entregadores").document(driverId).set(m, SetOptions.merge());
+        return Tasks.whenAll(legacy, supabase.equipment(hasCash, cashAvailable, hasMachine, machineTypes));
     }
 
     /** Somente ofertas direcionadas ao entregador. ofertaParaTodos/broadcast não são aceitos. */
     public ListenerRegistration listenDirectedRides(String driverId, RideCallback cb) {
-        return db.collection("rides").whereEqualTo("targetDriverId", driverId).addSnapshotListener((snap, e) -> {
+        Handler handler = new Handler(Looper.getMainLooper());
+        UpDocument[] legacy = new UpDocument[1];
+        UpDocument[] remote = new UpDocument[1];
+        boolean[] removed = {false};
+        Runnable emit = () -> {
+            if (!removed[0]) cb.onRide(remote[0] != null ? remote[0] : legacy[0]);
+        };
+
+        ListenerRegistration firestore = db.collection("rides").whereEqualTo("targetDriverId", driverId).addSnapshotListener((snap, e) -> {
             if (e != null) { cb.onError(e); return; }
             if (snap == null) return;
             DocumentSnapshot best = null;
@@ -124,14 +139,40 @@ public class DriverRepository {
                     bestExpiry = expiry > 0 ? expiry : Long.MAX_VALUE;
                 }
             }
-            cb.onRide(best);
+            legacy[0] = best == null ? null : UpDocument.fromFirestore(best);
+            emit.run();
         });
+
+        Runnable poll = new Runnable() {
+            @Override public void run() {
+                if (removed[0]) return;
+                supabase.offer()
+                        .addOnSuccessListener(document -> {
+                            boolean samePendingOffer = remote[0] != null && document != null
+                                    && remote[0].getId().equals(document.getId())
+                                    && Boolean.TRUE.equals(remote[0].getBoolean("ofertaAtiva"))
+                                    && Boolean.TRUE.equals(document.getBoolean("ofertaAtiva"));
+                            remote[0] = document;
+                            if (!samePendingOffer) emit.run();
+                        })
+                        .addOnCompleteListener(task -> {
+                            if (!removed[0]) handler.postDelayed(this, 7000L);
+                        });
+            }
+        };
+        handler.post(poll);
+        return () -> {
+            removed[0] = true;
+            handler.removeCallbacks(poll);
+            firestore.remove();
+        };
     }
 
     public ListenerRegistration listenRide(String rideId, RideCallback cb) {
+        if (isSupabaseMission(rideId)) return pollSupabaseMission(rideId, cb);
         return db.collection("rides").document(rideId).addSnapshotListener((d, e) -> {
             if (e != null) { cb.onError(e); return; }
-            cb.onRide(d != null && d.exists() ? d : null);
+            cb.onRide(d != null && d.exists() ? UpDocument.fromFirestore(d) : null);
         });
     }
 
@@ -156,22 +197,26 @@ public class DriverRepository {
                     bestExpiry = expiry > 0 ? expiry : Long.MAX_VALUE;
                 }
             }
-            cb.onRide(best);
+            cb.onRide(best == null ? null : UpDocument.fromFirestore(best));
         });
     }
 
     public ListenerRegistration listenRoute(String routeId, RideCallback cb) {
         return db.collection("rotas_entrega").document(routeId).addSnapshotListener((d, e) -> {
             if (e != null) { cb.onError(e); return; }
-            cb.onRide(d != null && d.exists() ? d : null);
+            cb.onRide(d != null && d.exists() ? UpDocument.fromFirestore(d) : null);
         });
     }
 
-    public Task<DocumentSnapshot> loadRoute(String routeId) {
-        return db.collection("rotas_entrega").document(routeId).get();
+    public Task<UpDocument> loadRoute(String routeId) {
+        return db.collection("rotas_entrega").document(routeId).get().continueWith(task -> {
+            if (!task.isSuccessful()) throw task.getException();
+            return UpDocument.fromFirestore(task.getResult());
+        });
     }
 
     public Task<Void> acceptRide(String driverId, String rideId) {
+        if (isSupabaseMission(rideId)) return supabase.accept(rideId);
         DocumentReference ride = db.collection("rides").document(rideId);
         DocumentReference driver = db.collection("entregadores").document(driverId);
         DocumentReference event = db.collection("appEventosOperacao").document();
@@ -283,6 +328,7 @@ public class DriverRepository {
     }
 
     public Task<Void> rejectRide(String driverId, String rideId, String reason) {
+        if (isSupabaseMission(rideId)) return supabase.reject(rideId, reason);
         DocumentReference ride = db.collection("rides").document(rideId);
         DocumentReference driver = db.collection("entregadores").document(driverId);
         DocumentReference rejection = ride.collection("rejections").document();
@@ -373,6 +419,7 @@ public class DriverRepository {
     }
 
     public Task<Void> markOfferExpired(String driverId, String rideId) {
+        if (isSupabaseMission(rideId)) return supabase.expire(rideId);
         DocumentReference ride = db.collection("rides").document(rideId);
         DocumentReference driver = db.collection("entregadores").document(driverId);
         return db.runTransaction(tx -> {
@@ -437,10 +484,12 @@ public class DriverRepository {
     }
 
     public Task<Void> setRideStage(String driverId, String rideId, String status, String deliveryStatus, String timestampField) {
+        if (isSupabaseMission(rideId)) return supabase.stage(rideId, status, deliveryStatus, timestampField);
         return updateStageTransaction(driverId, rideId, status, deliveryStatus, timestampField, null, false);
     }
 
     public Task<Void> pickupRide(String driverId, String rideId, String enteredCode) {
+        if (isSupabaseMission(rideId)) return supabase.pickup(rideId, enteredCode);
         return updateStageTransaction(driverId, rideId, "EM_ENTREGA", "SAIU_PARA_ENTREGA", "retiradoEm", enteredCode, true);
     }
 
@@ -530,6 +579,7 @@ public class DriverRepository {
     }
 
     public Task<Void> finishRide(String driverId, String rideId, String enteredCode, double receivedAmount) {
+        if (isSupabaseMission(rideId)) return supabase.finish(rideId, enteredCode, receivedAmount);
         DocumentReference ride = db.collection("rides").document(rideId);
         DocumentReference driver = db.collection("entregadores").document(driverId);
         DocumentReference event = db.collection("appEventosOperacao").document();
@@ -1303,13 +1353,18 @@ public class DriverRepository {
         m.put("tokenAtualizadoEm", FieldValue.serverTimestamp());
         m.put("tokenUpdatedAt", FieldValue.serverTimestamp());
         m.put("updatedAt", FieldValue.serverTimestamp());
-        return db.collection("entregadores").document(driverId).set(m, SetOptions.merge());
+        Task<Void> legacy = db.collection("entregadores").document(driverId).set(m, SetOptions.merge());
+        return Tasks.whenAll(legacy, supabase.token(token));
     }
 
     /** Grava GPS no entregador e na missão atual; em rotas, espelha somente para pedidos com mapa habilitado. */
     public Task<Void> saveMissionLocation(String driverId, double lat, double lng, float accuracy, float speed, float bearing,
                                           String missionId, String missionType, boolean visibleToCustomer,
                                           double traveledDeliveryMeters) {
+        if (isSupabaseMission(missionId)) {
+            return supabase.location(missionId, lat, lng, accuracy, speed, bearing,
+                    visibleToCustomer, traveledDeliveryMeters);
+        }
         if ("rotas_entrega".equals(missionType)) {
             Map<String, Object> coords = new HashMap<>();
             coords.put("lat", lat); coords.put("lng", lng); coords.put("accuracy", accuracy);
@@ -1415,6 +1470,12 @@ public class DriverRepository {
      * Reconciliacao segura: espelha no cadastro do entregador o estado que ja existe na missao.
      * Nao avanca etapa; serve para Gestor/Central recuperarem rotas antigas ou app reaberto.
      */
+    public Task<Void> syncDriverMissionState(String driverId, String missionId, String missionType, UpDocument mission) {
+        if (mission == null || !mission.exists()) return Tasks.forResult(null);
+        if (mission.isSupabase() || isSupabaseMission(missionId)) return Tasks.forResult(null);
+        return syncDriverMissionState(driverId, missionId, missionType, mission.firestore());
+    }
+
     public Task<Void> syncDriverMissionState(String driverId, String missionId, String missionType, DocumentSnapshot mission) {
         if (driverId == null || driverId.isEmpty() || mission == null || !mission.exists()) return Tasks.forResult(null);
         UpState state = UpState.from(mission);
@@ -1446,18 +1507,56 @@ public class DriverRepository {
         return db.collection("entregadores").document(driverId).set(dm, SetOptions.merge());
     }
 
-    public Task<DocumentSnapshot> loadRide(String id) { return db.collection("rides").document(id).get(); }
-
-    public Task<QuerySnapshot> loadHistory(String driverId) {
-        return db.collection("rides").whereEqualTo("entregadorId", driverId).limit(30).get();
+    public Task<UpDocument> loadRide(String id) {
+        if (isSupabaseMission(id)) return supabase.mission(id);
+        return db.collection("rides").document(id).get().continueWith(task -> {
+            if (!task.isSuccessful()) throw task.getException();
+            return UpDocument.fromFirestore(task.getResult());
+        });
     }
 
-    public Task<QuerySnapshot> loadSettlements(String driverId) {
-        return db.collection("acertosEntregadores").whereEqualTo("entregadorId", driverId).limit(100).get();
+    public Task<UpQuery> loadHistory(String driverId) {
+        Task<QuerySnapshot> legacyTask = db.collection("rides").whereEqualTo("entregadorId", driverId).limit(30).get();
+        Task<UpQuery> remoteTask = supabase.history();
+        return remoteTask.continueWithTask(remote -> legacyTask.continueWith(legacy -> {
+            ArrayList<UpDocument> documents = new ArrayList<>();
+            if (remote.isSuccessful() && remote.getResult() != null) documents.addAll(remote.getResult().getDocuments());
+            if (legacy.isSuccessful() && legacy.getResult() != null) {
+                for (DocumentSnapshot document : legacy.getResult().getDocuments())
+                    documents.add(UpDocument.fromFirestore(document));
+            }
+            if (!remote.isSuccessful() && !legacy.isSuccessful())
+                throw remote.getException() != null ? remote.getException() : legacy.getException();
+            return new UpQuery(documents);
+        }));
     }
 
-    public Task<QuerySnapshot> loadNotifications(String driverId) {
-        return db.collection("app_notifications").whereEqualTo("targetDriverId", driverId).limit(80).get();
+    public Task<UpQuery> loadSettlements(String driverId) {
+        Task<QuerySnapshot> legacyTask = db.collection("acertosEntregadores").whereEqualTo("entregadorId", driverId).limit(100).get();
+        Task<UpQuery> remoteTask = supabase.history();
+        return remoteTask.continueWithTask(remote -> legacyTask.continueWith(legacy -> {
+            ArrayList<UpDocument> out = new ArrayList<>();
+            if (remote.isSuccessful() && remote.getResult() != null) {
+                for (UpDocument document : remote.getResult().getDocuments())
+                    if (UpState.from(document) == UpState.DELIVERED) out.add(document);
+            }
+            if (legacy.isSuccessful() && legacy.getResult() != null) {
+                for (DocumentSnapshot document : legacy.getResult().getDocuments()) out.add(UpDocument.fromFirestore(document));
+            }
+            if (!remote.isSuccessful() && !legacy.isSuccessful())
+                throw remote.getException() != null ? remote.getException() : legacy.getException();
+            return new UpQuery(out);
+        }));
+    }
+
+    public Task<UpQuery> loadNotifications(String driverId) {
+        return db.collection("app_notifications").whereEqualTo("targetDriverId", driverId).limit(80).get()
+                .continueWith(task -> {
+                    if (!task.isSuccessful()) throw task.getException();
+                    ArrayList<UpDocument> out = new ArrayList<>();
+                    for (DocumentSnapshot document : task.getResult().getDocuments()) out.add(UpDocument.fromFirestore(document));
+                    return new UpQuery(out);
+                });
     }
 
     /** Solicita alteração de Pix sem substituir dados aprovados diretamente. A loja/GADM decide a aprovação. */
@@ -1518,6 +1617,7 @@ public class DriverRepository {
     }
 
     public Task<Void> occurrence(String driverId, String rideId, String reason) {
+        if (isSupabaseMission(rideId)) return supabase.occurrence(rideId, reason);
         DocumentReference occ = db.collection("ocorrenciasOperacao").document();
         DocumentReference ride = db.collection("rides").document(rideId);
         return db.runTransaction(tx -> {
@@ -1556,6 +1656,130 @@ public class DriverRepository {
             tx.update(ride, rm);
             return null;
         });
+    }
+
+    private ListenerRegistration pollSupabaseMission(String missionId, RideCallback cb) {
+        Handler handler = new Handler(Looper.getMainLooper());
+        boolean[] removed = {false};
+        Runnable poll = new Runnable() {
+            @Override public void run() {
+                if (removed[0]) return;
+                supabase.mission(missionId)
+                        .addOnSuccessListener(cb::onRide)
+                        .addOnFailureListener(cb::onError)
+                        .addOnCompleteListener(task -> {
+                            if (!removed[0]) handler.postDelayed(this, 6000L);
+                        });
+            }
+        };
+        handler.post(poll);
+        return () -> {
+            removed[0] = true;
+            handler.removeCallbacks(poll);
+        };
+    }
+
+    private static boolean isSupabaseMission(String missionId) {
+        return missionId != null && missionId.startsWith(SupabaseDriverApi.ID_PREFIX);
+    }
+
+    public static long offerExpiryMillis(UpDocument d) {
+        if (d == null) return 0L;
+        String[] fields = {"offerExpiresAt", "ofertaExpiraEm", "expiresAt", "expiraEm", "prazoRespostaOfertaMs"};
+        for (String f : fields) {
+            Object o = d.get(f);
+            long v = toMillis(o, d);
+            if (v > 0) return v;
+        }
+        return 0L;
+    }
+
+    private static long toMillis(Object o, UpDocument d) {
+        if (o == null) return 0;
+        if (o instanceof Timestamp) return ((Timestamp) o).toDate().getTime();
+        if (o instanceof Date) return ((Date) o).getTime();
+        if (o instanceof Number) {
+            long n = ((Number) o).longValue();
+            if (n > 1_000_000_000_000L) return n;
+            if (n > 1_000_000_000L) return n * 1000L;
+            if (n > 0 && n <= 10 * 60 * 1000L) {
+                long base = toMillis(d.get("ofertaCriadaEm"), d);
+                if (base == 0) base = toMillis(d.get("createdAt"), d);
+                if (base > 0) return base + n;
+            }
+            return 0;
+        }
+        if (o instanceof String) {
+            try { return Instant.parse((String) o).toEpochMilli(); } catch (Exception ignored) {}
+            try { return Long.parseLong((String) o); } catch (Exception ignored) {}
+        }
+        return 0;
+    }
+
+    public static boolean isDirectedTo(UpDocument r, String driverId) {
+        if (driverId == null || driverId.isEmpty()) return false;
+        return driverId.equals(directedTarget(r));
+    }
+
+    public static String directedTarget(UpDocument r) {
+        String[] fields = {"targetDriverId", "ofertaParaEntregadorId", "driverAtualOferta", "entregadorAtualOferta", "entregadorSelecionadoId", "entregadorOfertaId"};
+        String target = "";
+        for (String f : fields) {
+            String v = s(r, f).trim();
+            if (v.isEmpty() || "null".equalsIgnoreCase(v)) continue;
+            if (target.isEmpty()) target = v;
+            else if (!target.equals(v)) return "";
+        }
+        return target;
+    }
+
+    public static boolean isMultiRoute(UpDocument r) {
+        if (r == null || !r.exists()) return false;
+        String type = first(r, "tipo", "routeType", "missionType").toUpperCase(Locale.ROOT);
+        if (type.contains("ROTA_MULTIPLA") || type.contains("MULTI")) return true;
+        Object n = r.get("qtdPedidos");
+        if (!(n instanceof Number)) n = r.get("quantidadePedidos");
+        return n instanceof Number && ((Number) n).intValue() > 1;
+    }
+
+    @SuppressWarnings("unchecked")
+    public static List<Map<String, Object>> routeStops(UpDocument r) {
+        ArrayList<Map<String, Object>> out = new ArrayList<>();
+        Object raw = r == null ? null : r.get("paradas");
+        if (raw instanceof List) {
+            for (Object x : (List<?>) raw) {
+                if (x instanceof Map) out.add(new HashMap<>((Map<String, Object>) x));
+            }
+        }
+        return out;
+    }
+
+    public static List<String> routeOrderIds(UpDocument r) {
+        ArrayList<String> out = new ArrayList<>();
+        if (r == null) return out;
+        Object raw = r.get("pedidoIds");
+        if (!(raw instanceof List)) raw = r.get("pedidosIds");
+        if (raw instanceof List) {
+            for (Object x : (List<?>) raw) {
+                String id = x == null ? "" : String.valueOf(x).trim();
+                if (!id.isEmpty() && !out.contains(id)) out.add(id);
+            }
+        }
+        if (out.isEmpty()) {
+            for (Map<String, Object> stop : routeStops(r)) {
+                Object x = stop.get("pedidoId");
+                String id = x == null ? "" : String.valueOf(x).trim();
+                if (!id.isEmpty() && !out.contains(id)) out.add(id);
+            }
+        }
+        return out;
+    }
+
+    public static int routeCurrentIndex(UpDocument r, int size) {
+        Object x = r == null ? null : r.get("indiceParadaAtual");
+        int i = x instanceof Number ? ((Number) x).intValue() : 0;
+        if (size <= 0) return 0;
+        return Math.max(0, Math.min(size - 1, i));
     }
 
     public static long offerExpiryMillis(DocumentSnapshot d) {
@@ -1831,6 +2055,20 @@ public class DriverRepository {
     }
 
     static String s(DocumentSnapshot d, String field) {
+        if (d == null) return "";
+        Object o = d.get(field);
+        return o == null ? "" : String.valueOf(o);
+    }
+
+    static String first(UpDocument d, String... fields) {
+        for (String f : fields) {
+            String v = s(d, f);
+            if (!v.isEmpty() && !"null".equalsIgnoreCase(v)) return v;
+        }
+        return "";
+    }
+
+    static String s(UpDocument d, String field) {
         if (d == null) return "";
         Object o = d.get(field);
         return o == null ? "" : String.valueOf(o);

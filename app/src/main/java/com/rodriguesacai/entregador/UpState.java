@@ -38,6 +38,14 @@ public enum UpState {
         return fromLegacy(first(d, "status"), first(d, "statusEntrega"), first(d, "statusCorrida"));
     }
 
+    public static UpState from(UpDocument d) {
+        if (d == null || !d.exists()) return UNKNOWN;
+        String explicit = first(d, "upState", "estadoOperacionalUP", "upMissionState");
+        UpState e = parse(explicit);
+        if (e != UNKNOWN) return e;
+        return fromLegacy(first(d, "status"), first(d, "statusEntrega"), first(d, "statusCorrida"));
+    }
+
     public static UpState fromLegacy(String status, String delivery, String rideStatus) {
         String raw = ((status == null ? "" : status) + " " +
                 (delivery == null ? "" : delivery) + " " +
@@ -83,6 +91,14 @@ public enum UpState {
     }
 
     private static String first(DocumentSnapshot d, String... keys) {
+        for (String k : keys) {
+            Object v = d.get(k);
+            if (v != null && !String.valueOf(v).trim().isEmpty()) return String.valueOf(v).trim();
+        }
+        return "";
+    }
+
+    private static String first(UpDocument d, String... keys) {
         for (String k : keys) {
             Object v = d.get(k);
             if (v != null && !String.valueOf(v).trim().isEmpty()) return String.valueOf(v).trim();

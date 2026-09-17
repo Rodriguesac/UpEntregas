@@ -13,18 +13,15 @@ import androidx.annotation.Nullable;
 import androidx.core.app.ServiceCompat;
 import androidx.core.content.ContextCompat;
 
-import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.ListenerRegistration;
-
-import java.util.List;
 
 public class OnlineService extends Service {
     private ListenerRegistration rideListener;
     private ListenerRegistration routeListener;
     private final DriverRepository repo = new DriverRepository();
     private String driverId = "";
-    private DocumentSnapshot rideOffer;
-    private DocumentSnapshot routeOffer;
+    private UpDocument rideOffer;
+    private UpDocument routeOffer;
     private String notifiedKey = "";
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable telemetry = new Runnable() {
@@ -70,7 +67,7 @@ public class OnlineService extends Service {
         if (routeListener != null) routeListener.remove();
 
         rideListener = repo.listenDirectedRides(driverId, new DriverRepository.RideCallback() {
-            @Override public void onRide(DocumentSnapshot d) {
+            @Override public void onRide(UpDocument d) {
                 rideOffer = d;
                 refreshOffer();
             }
@@ -78,7 +75,7 @@ public class OnlineService extends Service {
         });
 
         routeListener = repo.listenDirectedRoutes(driverId, new DriverRepository.RideCallback() {
-            @Override public void onRide(DocumentSnapshot d) {
+            @Override public void onRide(UpDocument d) {
                 routeOffer = d;
                 refreshOffer();
             }
@@ -87,7 +84,7 @@ public class OnlineService extends Service {
     }
 
     private void refreshOffer() {
-        DocumentSnapshot best = chooseOffer();
+        UpDocument best = chooseOffer();
         if (best == null) {
             if (!notifiedKey.isEmpty()) {
                 String[] p = notifiedKey.split(":", 3);
@@ -123,7 +120,7 @@ public class OnlineService extends Service {
         }
     }
 
-    private DocumentSnapshot chooseOffer() {
+    private UpDocument chooseOffer() {
         if (rideOffer == null) return routeOffer;
         if (routeOffer == null) return rideOffer;
         long a = DriverRepository.offerExpiryMillis(rideOffer);
