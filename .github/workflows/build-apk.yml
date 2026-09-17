@@ -4,6 +4,8 @@ on:
   workflow_dispatch:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
   build:
@@ -22,17 +24,12 @@ jobs:
       - name: Configurar Android SDK
         uses: android-actions/setup-android@v4
         with:
-          # O pacote legado `tools` foi removido do repositório do Google.
-          # Instalamos abaixo somente plataforma e build-tools atuais.
           packages: ''
 
       - name: Instalar Android 35
         run: |
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
-      # Mantém a MESMA assinatura de debug entre as compilações deste repositório.
-      # A primeira V1.9 pode exigir uma última desinstalação da versão antiga.
-      # Depois, enquanto esta chave persistir no cache, o Android aceita atualização por cima.
       - name: Restaurar chave de atualização
         uses: actions/cache@v4
         with:
@@ -59,15 +56,24 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Compilar APK
-        run: gradle :app:assembleDebug --stacktrace
+      - name: Compilar APKs
+        run: gradle :app:assembleDebug :gestor:assembleDebug --stacktrace
 
-      - name: Renomear APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk UP-Entregas.apk
+      - name: Renomear APKs
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk UP-Entregas.apk
+          cp gestor/build/outputs/apk/debug/gestor-debug.apk UP-Gestor.apk
 
-      - name: Disponibilizar APK
+      - name: Disponibilizar UP Entregas
         uses: actions/upload-artifact@v4
         with:
           name: UP-Entregas-APK
           path: UP-Entregas.apk
+          if-no-files-found: error
+
+      - name: Disponibilizar UP Gestor
+        uses: actions/upload-artifact@v4
+        with:
+          name: UP-Gestor-APK
+          path: UP-Gestor.apk
           if-no-files-found: error
