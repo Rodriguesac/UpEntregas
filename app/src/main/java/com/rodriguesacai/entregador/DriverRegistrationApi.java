@@ -19,8 +19,8 @@ import java.util.concurrent.Executors;
 
 /** Ponte segura entre o cadastro Firebase do entregador e o Gestor Web/Supabase. */
 public final class DriverRegistrationApi {
-    private static final String ENDPOINT = "https://jgjmntezfjuyuxhcnvhd.supabase.co/functions/v1/driver-registration";
-    private static final String PUBLISHABLE_KEY = "sb_publishable_fsub-d0wToVGTbfDoATS7A_NWaimMvX";
+    private static final String ENDPOINT = "https://fdqqwdplprzpqufpgdrm.supabase.co/functions/v1/driver-registration";
+    private static final String PUBLISHABLE_KEY = "sb_publishable_yV7nuzH5yz17PzGRVK3o5g_UNvt7b4d";
     private static final ExecutorService IO = Executors.newFixedThreadPool(2);
 
     public Task<String> submit(Map<String, String> values) {
