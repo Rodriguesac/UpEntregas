@@ -22,8 +22,8 @@ import java.util.concurrent.Executors;
 /** Cliente autenticado da API operacional do entregador no Supabase. */
 public final class SupabaseDriverApi {
     public static final String ID_PREFIX = "supabase:";
-    private static final String ENDPOINT = "https://jgjmntezfjuyuxhcnvhd.supabase.co/functions/v1/driver-api";
-    private static final String PUBLISHABLE_KEY = "sb_publishable_fsub-d0wToVGTbfDoATS7A_NWaimMvX";
+    private static final String ENDPOINT = "https://fdqqwdplprzpqufpgdrm.supabase.co/functions/v1/driver-api";
+    private static final String PUBLISHABLE_KEY = "sb_publishable_yV7nuzH5yz17PzGRVK3o5g_UNvt7b4d";
     private static final ExecutorService IO = Executors.newFixedThreadPool(3);
 
     public Task<UpDocument> offer() { return documentCall("offer", new JSONObject()); }
