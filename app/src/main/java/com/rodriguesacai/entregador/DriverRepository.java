@@ -57,7 +57,10 @@ public class DriverRepository {
         m.put("appVersion", BuildConfig.VERSION_NAME);
         m.put("updatedAt", FieldValue.serverTimestamp());
         Task<Void> legacy = db.collection("entregadores").document(driverId).set(m, SetOptions.merge());
-        return Tasks.whenAll(legacy, supabase.presence(online));
+        return legacy.continueWithTask(task -> {
+            if (!task.isSuccessful()) return Tasks.forException(task.getException());
+            return supabase.presence(online);
+        });
     }
 
     public void loadUpConfig(DriverCallback cb) {
@@ -87,7 +90,10 @@ public class DriverRepository {
         m.put("appVersion", BuildConfig.VERSION_NAME);
         m.put("updatedAt", FieldValue.serverTimestamp());
         Task<Void> legacy = db.collection("entregadores").document(driverId).set(m, SetOptions.merge());
-        return Tasks.whenAll(legacy, supabase.telemetry(batteryLevel, charging));
+        return legacy.continueWithTask(task -> {
+            if (!task.isSuccessful()) return Tasks.forException(task.getException());
+            return supabase.telemetry(batteryLevel, charging);
+        });
     }
 
     public Task<Void> saveOperationalEquipment(String driverId, boolean hasCash, double cashAvailable,
@@ -108,7 +114,10 @@ public class DriverRepository {
         m.put("equipamentos", op);
         m.put("updatedAt", FieldValue.serverTimestamp());
         Task<Void> legacy = db.collection("entregadores").document(driverId).set(m, SetOptions.merge());
-        return Tasks.whenAll(legacy, supabase.equipment(hasCash, cashAvailable, hasMachine, machineTypes));
+        return legacy.continueWithTask(task -> {
+            if (!task.isSuccessful()) return Tasks.forException(task.getException());
+            return supabase.equipment(hasCash, cashAvailable, hasMachine, machineTypes);
+        });
     }
 
     /** Somente ofertas direcionadas ao entregador. ofertaParaTodos/broadcast não são aceitos. */
