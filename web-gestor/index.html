@@ -13,8 +13,8 @@
 <div id="app" class="shell hidden"><aside class="side"><div class="brand">UP Gestor<small>Logística e entregadores</small></div><div id="nav" class="nav"></div></aside><section class="main"><header class="top"><div><div id="pageTitle" class="title">Visão geral</div><div id="live" class="live">Conectando…</div></div><div class="grow"></div><button class="btn soft" onclick="refresh(true)">Atualizar</button><button class="btn soft mobileHide" onclick="logout()">Sair</button></header><div id="spin" class="spinner"></div><main id="content" class="content"></main></section><nav id="mobileNav" class="mobileNav"></nav></div>
 <div id="modal" class="modalBack hidden"><div class="modal"><h3 id="modalTitle">Ação</h3><div id="modalBody"></div><div class="modalActions"><button class="btn soft grow" onclick="closeModal()">Cancelar</button><button id="modalOk" class="btn primary grow">Confirmar</button></div></div></div>
 <script>
-const OPS='https://jgjmntezfjuyuxhcnvhd.supabase.co/functions/v1/gestor-orders';
-const ADM='https://jgjmntezfjuyuxhcnvhd.supabase.co/functions/v1/up-manager-data';
+const OPS='https://fdqqwdplprzpqufpgdrm.supabase.co/functions/v1/gestor-orders';
+const ADM='https://fdqqwdplprzpqufpgdrm.supabase.co/functions/v1/up-manager-data';
 const JWT='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impnam1udGV6Zmp1eXV4aGNudmhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc1MzgyOTksImV4cCI6MjEwMzExNDI5OX0.n3yg9IdC6j8OB-vwi-yuXRKJZE3jdlL_wj3qVr-JBBc';
 const tabs=[['dashboard','Visão geral'],['applications','Cadastros'],['couriers','Entregadores'],['rides','Corridas'],['finance','Financeiro'],['occurrences','Ocorrências']];
 let PIN=sessionStorage.getItem('upgestor_pin')||'',TAB='dashboard',ORD=[],COU=[],APP=[],FIN={couriers:[],payouts:[]},busy=false,appFilter='all';
