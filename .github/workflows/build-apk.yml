@@ -7,6 +7,9 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -84,3 +87,16 @@ jobs:
           name: UP-Gestor-Web-Netlify
           path: web-gestor/index.html
           if-no-files-found: error
+
+      - name: Publicar APK em link fixo
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view up-entregas-latest >/dev/null 2>&1; then
+            gh release upload up-entregas-latest UP-Entregas.apk --clobber
+          else
+            gh release create up-entregas-latest UP-Entregas.apk \
+              --title "UP Entregas — APK atual" \
+              --notes "APK mais recente do UP Entregas."
+          fi
