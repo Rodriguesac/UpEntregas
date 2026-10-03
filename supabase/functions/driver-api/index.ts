@@ -25,6 +25,33 @@ const num = (value: unknown) => {
   return Number.isFinite(number) ? number : 0;
 };
 const bool = (value: unknown) => value === true || String(value).toLowerCase() === "true";
+const clamp = (value: unknown, fallback: number, min: number, max: number) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback;
+};
+
+function trackingConfig(courier: any) {
+  const metadata = object(courier?.metadata);
+  const configured = object(metadata.tracking_config);
+  const requestedMode = text(configured.mode).toLowerCase();
+  return {
+    mode: requestedMode === "manual" ? "manual" : "dynamic",
+    manual_interval_seconds: clamp(configured.manual_interval_seconds, 30, 10, 300),
+    manual_min_distance_m: clamp(configured.manual_min_distance_m, 50, 5, 500),
+    before_pickup_interval_seconds: clamp(configured.before_pickup_interval_seconds, 45, 15, 300),
+    before_pickup_min_distance_m: clamp(configured.before_pickup_min_distance_m, 50, 5, 500),
+    delivery_moving_interval_seconds: clamp(configured.delivery_moving_interval_seconds, 20, 10, 180),
+    delivery_moving_min_distance_m: clamp(configured.delivery_moving_min_distance_m, 20, 5, 300),
+    delivery_fast_interval_seconds: clamp(configured.delivery_fast_interval_seconds, 15, 10, 120),
+    delivery_fast_min_distance_m: clamp(configured.delivery_fast_min_distance_m, 35, 5, 300),
+    stationary_interval_seconds: clamp(configured.stationary_interval_seconds, 60, 30, 300),
+    stationary_min_distance_m: clamp(configured.stationary_min_distance_m, 15, 5, 100),
+    heartbeat_seconds: clamp(configured.heartbeat_seconds, 90, 45, 600),
+    history_enabled: bool(configured.history_enabled),
+    order_mirror_interval_seconds: clamp(configured.order_mirror_interval_seconds, 30, 15, 300),
+    server_min_interval_seconds: clamp(configured.server_min_interval_seconds, 8, 5, 60),
+  };
+}
 const bearer = (req: Request) => text(req.headers.get("authorization")).replace(/^Bearer\s+/i, "");
 const object = (value: unknown): Record<string, any> => value && typeof value === "object" && !Array.isArray(value)
   ? value as Record<string, any> : {};
@@ -89,7 +116,7 @@ function inferState(row: any) {
   return row?.courier_id ? "TO_STORE" : "OFFER_PENDING";
 }
 
-function orderDocument(row: any, firebaseUid: string, offer: boolean) {
+function orderDocument(row: any, firebaseUid: string, offer: boolean, courier?: any) {
   const raw = object(row?.raw_payload);
   const customer = object(raw?.cliente);
   const address = object(row?.delivery_address || raw?.endereco);
@@ -172,6 +199,7 @@ function orderDocument(row: any, firebaseUid: string, offer: boolean) {
     createdAt: row?.created_at,
     updatedAt: row?.updated_at,
     _rejectedBy: rejected,
+    trackingConfig: trackingConfig(courier),
   };
   if (raw?.up_location) data.localizacaoEntregador = raw.up_location;
   return { id: `supabase:${row.id}`, data };
@@ -180,24 +208,51 @@ function orderDocument(row: any, firebaseUid: string, offer: boolean) {
 async function ensureCourier(admin: any, firebaseUid: string, profile: Record<string, any>) {
   const existing = await admin.from("couriers").select("*").eq("firebase_uid", firebaseUid).maybeSingle();
   if (existing.error) throw new Error(`courier_lookup_failed: ${existing.error.message}`);
+
   const oldMetadata = object(existing.data?.metadata);
+  const approvalStatus = first(profile, "statusAprovacao") || "aprovado";
+  const vehicleType = first(profile, "tipoVeiculo", "modalidade");
+  const name = first(profile, "nomeCompleto", "nome") || null;
+  const phone = first(profile, "whatsapp", "telefone") || null;
+
   const metadata = {
     ...oldMetadata,
-    approval_status: first(profile, "statusAprovacao") || "aprovado",
-    vehicle_type: first(profile, "tipoVeiculo", "modalidade"),
+    approval_status: approvalStatus,
+    vehicle_type: vehicleType,
     app_source: APP_SOURCE,
   };
-  const values = {
+
+  if (existing.data) {
+    const same =
+      text(existing.data.firebase_id) === firebaseUid &&
+      text(existing.data.name) === text(name) &&
+      text(existing.data.phone) === text(phone) &&
+      text(oldMetadata.approval_status) === text(approvalStatus) &&
+      text(oldMetadata.vehicle_type) === text(vehicleType) &&
+      text(oldMetadata.app_source) === APP_SOURCE;
+    if (same) return existing.data;
+
+    const updated = await admin.from("couriers").update({
+      firebase_id: firebaseUid,
+      name,
+      phone,
+      metadata,
+      updated_at: new Date().toISOString(),
+    }).eq("id", existing.data.id).select("*").single();
+    if (updated.error) throw new Error(`courier_update_failed: ${updated.error.message}`);
+    return updated.data;
+  }
+
+  const inserted = await admin.from("couriers").insert({
     firebase_uid: firebaseUid,
     firebase_id: firebaseUid,
-    name: first(profile, "nomeCompleto", "nome") || null,
-    phone: first(profile, "whatsapp", "telefone") || null,
+    name,
+    phone,
     metadata,
     updated_at: new Date().toISOString(),
-  };
-  const saved = await admin.from("couriers").upsert(values, { onConflict: "firebase_uid" }).select("*").single();
-  if (saved.error) throw new Error(`courier_upsert_failed: ${saved.error.message}`);
-  return saved.data;
+  }).select("*").single();
+  if (inserted.error) throw new Error(`courier_insert_failed: ${inserted.error.message}`);
+  return inserted.data;
 }
 
 const ORDER_SELECT = "id,firebase_id,customer_id,courier_id,order_code,status,fulfillment_type,delivery_fee,total,payment_method,payment_status,payment_details,delivery_address,customer_note,tracking_enabled,pickup_code,raw_payload,created_at,updated_at,accepted_at,completed_at,customers(name,phone)";
@@ -407,14 +462,76 @@ Deno.serve(async (req: Request) => {
     if (action === "location") {
       const lat = num(body.lat), lng = num(body.lng);
       if (Math.abs(lat) > 90 || Math.abs(lng) > 180 || (lat === 0 && lng === 0)) return json({ error: "invalid_location", message: "Localização inválida." }, 400);
-      const location = { lat, lng, accuracy: num(body.accuracy), speed: num(body.speed), bearing: num(body.bearing), visible_to_customer: bool(body.visible_to_customer), traveled_delivery_meters: num(body.traveled_delivery_meters), updated_at: now };
-      const courierUpdate = await admin.from("couriers").update({ current_lat: lat, current_lng: lng, last_location_at: now, tracking_enabled: true, metadata: { ...object(courier.metadata), current_order_id: missionId, last_location: location }, updated_at: now }).eq("id", courier.id);
+
+      const config = trackingConfig(courier);
+      const metadata = object(courier.metadata);
+      const previousLocation = object(metadata.last_location);
+      const previousAt = Date.parse(text(previousLocation.updated_at));
+      const serverMinMs = Number(config.server_min_interval_seconds) * 1000;
+      if (Number.isFinite(previousAt) && previousAt > 0 && Date.now() - previousAt < serverMinMs) {
+        return json({ ok: true, skipped: true, reason: "server_throttle" });
+      }
+
+      const visibleToCustomer = bool(body.visible_to_customer);
+      const location = {
+        lat,
+        lng,
+        accuracy: num(body.accuracy),
+        speed: num(body.speed),
+        bearing: num(body.bearing),
+        visible_to_customer: visibleToCustomer,
+        traveled_delivery_meters: num(body.traveled_delivery_meters),
+        updated_at: now,
+      };
+
+      // Posição atual: uma única linha sobrescrita. Esta é a gravação principal do rastreamento.
+      const courierUpdate = await admin.from("couriers").update({
+        current_lat: lat,
+        current_lng: lng,
+        last_location_at: now,
+        tracking_enabled: true,
+        metadata: { ...metadata, current_order_id: missionId, last_location: location },
+        updated_at: now,
+      }).eq("id", courier.id);
       if (courierUpdate.error) throw new Error(`courier_location_failed: ${courierUpdate.error.message}`);
-      const point = await admin.from("tracking_points").insert({ order_id: missionId, courier_id: courier.id, lat, lng, accuracy_m: num(body.accuracy), speed_mps: num(body.speed), heading: num(body.bearing), recorded_at: now, raw_payload: { visible_to_customer: bool(body.visible_to_customer), traveled_delivery_meters: num(body.traveled_delivery_meters), source: APP_SOURCE } });
-      if (point.error) throw new Error(`tracking_point_failed: ${point.error.message}`);
-      const orderUpdate = await admin.from("orders").update({ raw_payload: { ...raw, up_location: location }, updated_at: now }).eq("id", missionId).eq("courier_id", courier.id);
-      if (orderUpdate.error) throw new Error(`order_location_failed: ${orderUpdate.error.message}`);
-      return json({ ok: true });
+
+      // Histórico detalhado é opt-in. Por padrão não cria uma linha para cada coordenada.
+      if (config.history_enabled) {
+        const point = await admin.from("tracking_points").insert({
+          order_id: missionId,
+          courier_id: courier.id,
+          lat,
+          lng,
+          accuracy_m: num(body.accuracy),
+          speed_mps: num(body.speed),
+          heading: num(body.bearing),
+          recorded_at: now,
+          raw_payload: {
+            visible_to_customer: visibleToCustomer,
+            traveled_delivery_meters: num(body.traveled_delivery_meters),
+            source: APP_SOURCE,
+          },
+        });
+        if (point.error) throw new Error(`tracking_point_failed: ${point.error.message}`);
+      }
+
+      // O pedido só recebe espelho de posição quando o mapa do cliente está ativo e
+      // respeitando um intervalo maior. Não altera orders.updated_at para evitar
+      // reordenações e eventos operacionais causados apenas pelo GPS.
+      if (visibleToCustomer) {
+        const oldOrderLocation = object(raw.up_location);
+        const oldOrderAt = Date.parse(text(oldOrderLocation.updated_at));
+        const mirrorMs = Number(config.order_mirror_interval_seconds) * 1000;
+        const shouldMirror = !Number.isFinite(oldOrderAt) || oldOrderAt <= 0 || Date.now() - oldOrderAt >= mirrorMs;
+        if (shouldMirror) {
+          const orderUpdate = await admin.from("orders").update({
+            raw_payload: { ...raw, up_location: location },
+          }).eq("id", missionId).eq("courier_id", courier.id);
+          if (orderUpdate.error) throw new Error(`order_location_failed: ${orderUpdate.error.message}`);
+        }
+      }
+
+      return json({ ok: true, history_saved: Boolean(config.history_enabled) });
     }
 
     if (action === "occurrence") {
