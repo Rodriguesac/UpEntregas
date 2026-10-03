@@ -25,6 +25,9 @@ const num = (value: unknown) => {
   return Number.isFinite(number) ? number : 0;
 };
 const bool = (value: unknown) => value === true || String(value).toLowerCase() === "true";
+const bearer = (req: Request) => text(req.headers.get("authorization")).replace(/^Bearer\s+/i, "");
+const object = (value: unknown): Record<string, any> => value && typeof value === "object" && !Array.isArray(value)
+  ? value as Record<string, any> : {};
 const clamp = (value: unknown, fallback: number, min: number, max: number) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback;
@@ -52,9 +55,6 @@ function trackingConfig(courier: any) {
     server_min_interval_seconds: clamp(configured.server_min_interval_seconds, 8, 5, 60),
   };
 }
-const bearer = (req: Request) => text(req.headers.get("authorization")).replace(/^Bearer\s+/i, "");
-const object = (value: unknown): Record<string, any> => value && typeof value === "object" && !Array.isArray(value)
-  ? value as Record<string, any> : {};
 
 function decodeFirestoreValue(value: any): any {
   if (!value || typeof value !== "object") return null;
@@ -301,6 +301,51 @@ async function assignedOrder(admin: any, courier: any, missionId: string) {
   return row;
 }
 
+
+const CUSTOMER_PUSH_URL = "https://rodriguesacaiecia.netlify.app/api/push-send";
+const CUSTOMER_VAPID_PUBLIC_KEY = "BDYgQcOCn0z6bYHSvyuHa-0E5QbcXqRaapOQ-0Ujh4YYXZ6yZCKZu4u7xhlI90NNB_O6sYfbg7EUmdybmTLILhc";
+
+function customerPushMessage(status: string, order: any) {
+  const code=text(order?.order_code||order?.raw_payload?.codigoPedido||"");
+  const input=text(status).toUpperCase();
+  const aliases:Record<string,string>={
+    SAIU_ENTREGA:"EM_ENTREGA",SAIU_PARA_ENTREGA:"EM_ENTREGA",A_CAMINHO_CLIENTE:"EM_ENTREGA",DESPACHADO:"EM_ENTREGA",
+    ENTREGUE:"CONCLUIDO",FINALIZADO:"CONCLUIDO",CONCLUÍDO:"CONCLUIDO"
+  };
+  const normalized=aliases[input]||input;
+  const messages:Record<string,{title:string,body:string,hold?:boolean}>={
+    EM_ENTREGA:{title:"Saiu para entrega",body:"O pedido #"+code+" está a caminho.",hold:true},
+    NO_CLIENTE:{title:"Entregador no local",body:"O entregador do pedido #"+code+" chegou ao endereço.",hold:true},
+    CONCLUIDO:{title:"Pedido entregue",body:"O pedido #"+code+" foi concluído.",hold:true}
+  };
+  return messages[normalized]||null;
+}
+async function sendCustomerPush(admin:any,order:any,status:string){
+  const message=customerPushMessage(status,order);
+  if(!message||!order?.customer_id)return;
+  try{
+    const customer=await admin.from("customers").select("id,auth_user_id").eq("id",order.customer_id).maybeSingle();
+    if(customer.error||!customer.data?.id)return;
+    const ownerIds=[customer.data.id,customer.data.auth_user_id].filter(Boolean);
+    const subscriptions=await admin.from("web_push_subscriptions").select("endpoint,p256dh,auth").in("owner_id",ownerIds).eq("active",true).limit(20);
+    if(subscriptions.error||!(subscriptions.data||[]).length)return;
+    const config=await admin.from("push_private_config").select("value").eq("id","web_push").maybeSingle();
+    const bridgeSecret=text(config.data?.value?.bridge_secret);
+    if(!bridgeSecret)return;
+    const receiptToken=text(order.receipt_token||order.raw_payload?.receiptToken);
+    const route=receiptToken?"/v30/acompanhar/"+encodeURIComponent(receiptToken):"/v30/pedidos";
+    const response=await fetch(CUSTOMER_PUSH_URL,{method:"POST",headers:{"Content-Type":"application/json","x-push-bridge":bridgeSecret},body:JSON.stringify({
+      vapid_public_key:CUSTOMER_VAPID_PUBLIC_KEY,
+      subscriptions:subscriptions.data,
+      payload:{title:message.title,body:message.body,url:route,tag:"rodrigues-order-"+text(order.id),orderId:text(order.firebase_id||order.id),receiptToken,status:text(status).toUpperCase(),requireInteraction:!!message.hold,vibrate:[320,120,320,120,520]}
+    }),signal:AbortSignal.timeout(6500)});
+    if(!response.ok){console.warn("[driver customer-push]",response.status);return}
+    const result=await response.json().catch(()=>({}));
+    const expired=(Array.isArray(result?.failed)?result.failed:[]).filter((x:any)=>[404,410].includes(Number(x?.statusCode))).map((x:any)=>text(x?.endpoint)).filter(Boolean);
+    if(expired.length)await admin.from("web_push_subscriptions").update({active:false,updated_at:new Date().toISOString()}).in("endpoint",expired);
+  }catch(error){console.warn("[driver customer-push]",error instanceof Error?error.message:String(error))}
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" } });
   if (req.method !== "POST") return json({ error: "method_not_allowed", message: "Método não permitido." }, 405);
@@ -361,15 +406,15 @@ Deno.serve(async (req: Request) => {
 
     if (action === "offer") {
       const current = await currentOrder(admin, courier.id);
-      if (current) return json({ ok: true, document: orderDocument(current, firebaseUid, false) });
+      if (current) return json({ ok: true, document: orderDocument(current, firebaseUid, false, courier) });
       const offered = await offeredOrder(admin, firebaseUid);
-      return json({ ok: true, document: offered ? orderDocument(offered, firebaseUid, true) : null });
+      return json({ ok: true, document: offered ? orderDocument(offered, firebaseUid, true, courier) : null });
     }
 
     if (action === "history") {
       const result = await admin.from("orders").select(ORDER_SELECT).eq("courier_id", courier.id).order("updated_at", { ascending: false }).limit(40);
       if (result.error) throw new Error(`history_failed: ${result.error.message}`);
-      const documents = (result.data || []).filter((row: any) => TERMINAL_STATUSES.has(text(row.status).toUpperCase())).map((row: any) => orderDocument(row, firebaseUid, false));
+      const documents = (result.data || []).filter((row: any) => TERMINAL_STATUSES.has(text(row.status).toUpperCase())).map((row: any) => orderDocument(row, firebaseUid, false, courier));
       return json({ ok: true, documents });
     }
 
@@ -383,7 +428,7 @@ Deno.serve(async (req: Request) => {
       const rejected = Array.isArray(raw.up_rejected_by) ? raw.up_rejected_by : [];
       const allowedOffer = !row.courier_id && OFFER_STATUSES.has(text(row.status).toUpperCase()) && !rejected.includes(firebaseUid);
       if (row.courier_id !== courier.id && !allowedOffer) return json({ error: "mission_forbidden", message: "Esta entrega não está disponível para você." }, 403);
-      return json({ ok: true, document: orderDocument(row, firebaseUid, !row.courier_id) });
+      return json({ ok: true, document: orderDocument(row, firebaseUid, !row.courier_id, courier) });
     }
 
     if (action === "accept") {
@@ -431,6 +476,10 @@ Deno.serve(async (req: Request) => {
       if (saved.error) throw new Error(`stage_failed: ${saved.error.message}`);
       await admin.from("couriers").update({ status: state === "TO_CUSTOMER" ? "delivery" : state === "AT_CUSTOMER" ? "at_customer" : "pickup", tracking_enabled: true, metadata: { ...object(courier.metadata), current_order_id: missionId, up_state: state }, updated_at: now }).eq("id", courier.id);
       await event(admin, missionId, deliveryStatus || status, firebaseUid, "Etapa atualizada pelo entregador.", { up_state: state });
+      if (state === "TO_CUSTOMER" || state === "AT_CUSTOMER") {
+        const latest = await orderById(admin, missionId);
+        if (latest) await sendCustomerPush(admin, latest, state === "AT_CUSTOMER" ? "NO_CLIENTE" : "EM_ENTREGA");
+      }
       return json({ ok: true });
     }
 
@@ -443,6 +492,8 @@ Deno.serve(async (req: Request) => {
       if (saved.error) throw new Error(`pickup_failed: ${saved.error.message}`);
       await admin.from("couriers").update({ status: "delivery", tracking_enabled: true, metadata: { ...object(courier.metadata), current_order_id: missionId, up_state: "TO_CUSTOMER" }, updated_at: now }).eq("id", courier.id);
       await event(admin, missionId, "SAIU_PARA_ENTREGA", firebaseUid, "Pedido retirado na loja.");
+      const latest = await orderById(admin, missionId);
+      if (latest) await sendCustomerPush(admin, latest, "SAIU_PARA_ENTREGA");
       return json({ ok: true });
     }
 
@@ -456,6 +507,8 @@ Deno.serve(async (req: Request) => {
       if (saved.error) throw new Error(`finish_failed: ${saved.error.message}`);
       await admin.from("couriers").update({ status: courier.online ? "available" : "offline", tracking_enabled: false, metadata: { ...object(courier.metadata), current_order_id: null, up_state: "DELIVERED" }, updated_at: now }).eq("id", courier.id);
       await event(admin, missionId, "ENTREGUE", firebaseUid, "Entrega concluída no UP Entregas.", { received_amount: received });
+      const latest = await orderById(admin, missionId);
+      if (latest) await sendCustomerPush(admin, latest, "ENTREGUE");
       return json({ ok: true });
     }
 
@@ -484,7 +537,6 @@ Deno.serve(async (req: Request) => {
         updated_at: now,
       };
 
-      // Posição atual: uma única linha sobrescrita. Esta é a gravação principal do rastreamento.
       const courierUpdate = await admin.from("couriers").update({
         current_lat: lat,
         current_lng: lng,
@@ -495,7 +547,6 @@ Deno.serve(async (req: Request) => {
       }).eq("id", courier.id);
       if (courierUpdate.error) throw new Error(`courier_location_failed: ${courierUpdate.error.message}`);
 
-      // Histórico detalhado é opt-in. Por padrão não cria uma linha para cada coordenada.
       if (config.history_enabled) {
         const point = await admin.from("tracking_points").insert({
           order_id: missionId,
@@ -515,9 +566,6 @@ Deno.serve(async (req: Request) => {
         if (point.error) throw new Error(`tracking_point_failed: ${point.error.message}`);
       }
 
-      // O pedido só recebe espelho de posição quando o mapa do cliente está ativo e
-      // respeitando um intervalo maior. Não altera orders.updated_at para evitar
-      // reordenações e eventos operacionais causados apenas pelo GPS.
       if (visibleToCustomer) {
         const oldOrderLocation = object(raw.up_location);
         const oldOrderAt = Date.parse(text(oldOrderLocation.updated_at));
