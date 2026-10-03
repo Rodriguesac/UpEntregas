@@ -24,10 +24,13 @@ public class OnlineService extends Service {
     private UpDocument routeOffer;
     private String notifiedKey = "";
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private int lastBatteryLevel = -100;
+    private boolean lastCharging = false;
+    private boolean telemetrySent = false;
     private final Runnable telemetry = new Runnable() {
         @Override public void run() {
             publishTelemetry();
-            handler.postDelayed(this, 60_000L);
+            handler.postDelayed(this, 600_000L);
         }
     };
 
@@ -143,7 +146,19 @@ public class OnlineService extends Service {
     private void publishTelemetry() {
         if (driverId.isEmpty()) return;
         DeviceStatus.Battery b = DeviceStatus.battery(this);
-        if (b.level >= 0) repo.saveDeviceTelemetry(driverId, b.level, b.charging);
+        if (b.level < 0) return;
+
+        boolean meaningfulChange = !telemetrySent
+                || b.charging != lastCharging
+                || Math.abs(b.level - lastBatteryLevel) >= 5;
+        if (!meaningfulChange) return;
+
+        repo.saveDeviceTelemetry(driverId, b.level, b.charging)
+                .addOnSuccessListener(unused -> {
+                    telemetrySent = true;
+                    lastBatteryLevel = b.level;
+                    lastCharging = b.charging;
+                });
     }
 
     @Override public void onDestroy() {
