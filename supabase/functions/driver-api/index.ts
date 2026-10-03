@@ -7,7 +7,7 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const FIREBASE_PROJECT_ID = "rodrigues-d6566";
 const FIREBASE_ISSUER = `https://securetoken.google.com/${FIREBASE_PROJECT_ID}`;
 const FIREBASE_JWKS = createRemoteJWKSet(new URL("https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"));
-const APP_SOURCE = "up_entregas_android_supabase_v271";
+const APP_SOURCE = "up_entregas_android_supabase_v280";
 const OFFER_STATUSES = new Set(["AGUARDANDO_ENTREGADOR", "BUSCANDO_ENTREGADOR", "PRONTO", "DESPACHADO"]);
 const TERMINAL_STATUSES = new Set(["ENTREGUE", "CONCLUIDO", "FINALIZADO", "CANCELADO", "CANCELADA"]);
 
