@@ -7,7 +7,7 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const FIREBASE_PROJECT_ID = "rodrigues-d6566";
 const FIREBASE_ISSUER = `https://securetoken.google.com/${FIREBASE_PROJECT_ID}`;
 const FIREBASE_JWKS = createRemoteJWKSet(new URL("https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"));
-const APP_SOURCE = "up_entregas_android_supabase_v271";
+const APP_SOURCE = "up_entregas_android_supabase_v280";
 const OFFER_STATUSES = new Set(["AGUARDANDO_ENTREGADOR", "BUSCANDO_ENTREGADOR", "PRONTO", "DESPACHADO"]);
 const TERMINAL_STATUSES = new Set(["ENTREGUE", "CONCLUIDO", "FINALIZADO", "CANCELADO", "CANCELADA"]);
 
@@ -28,6 +28,33 @@ const bool = (value: unknown) => value === true || String(value).toLowerCase() =
 const bearer = (req: Request) => text(req.headers.get("authorization")).replace(/^Bearer\s+/i, "");
 const object = (value: unknown): Record<string, any> => value && typeof value === "object" && !Array.isArray(value)
   ? value as Record<string, any> : {};
+const clamp = (value: unknown, fallback: number, min: number, max: number) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback;
+};
+
+function trackingConfig(courier: any) {
+  const metadata = object(courier?.metadata);
+  const configured = object(metadata.tracking_config);
+  const requestedMode = text(configured.mode).toLowerCase();
+  return {
+    mode: requestedMode === "manual" ? "manual" : "dynamic",
+    manual_interval_seconds: clamp(configured.manual_interval_seconds, 30, 10, 300),
+    manual_min_distance_m: clamp(configured.manual_min_distance_m, 50, 5, 500),
+    before_pickup_interval_seconds: clamp(configured.before_pickup_interval_seconds, 45, 15, 300),
+    before_pickup_min_distance_m: clamp(configured.before_pickup_min_distance_m, 50, 5, 500),
+    delivery_moving_interval_seconds: clamp(configured.delivery_moving_interval_seconds, 20, 10, 180),
+    delivery_moving_min_distance_m: clamp(configured.delivery_moving_min_distance_m, 20, 5, 300),
+    delivery_fast_interval_seconds: clamp(configured.delivery_fast_interval_seconds, 15, 10, 120),
+    delivery_fast_min_distance_m: clamp(configured.delivery_fast_min_distance_m, 35, 5, 300),
+    stationary_interval_seconds: clamp(configured.stationary_interval_seconds, 60, 30, 300),
+    stationary_min_distance_m: clamp(configured.stationary_min_distance_m, 15, 5, 100),
+    heartbeat_seconds: clamp(configured.heartbeat_seconds, 90, 45, 600),
+    history_enabled: bool(configured.history_enabled),
+    order_mirror_interval_seconds: clamp(configured.order_mirror_interval_seconds, 30, 15, 300),
+    server_min_interval_seconds: clamp(configured.server_min_interval_seconds, 8, 5, 60),
+  };
+}
 
 function decodeFirestoreValue(value: any): any {
   if (!value || typeof value !== "object") return null;
@@ -89,7 +116,7 @@ function inferState(row: any) {
   return row?.courier_id ? "TO_STORE" : "OFFER_PENDING";
 }
 
-function orderDocument(row: any, firebaseUid: string, offer: boolean) {
+function orderDocument(row: any, firebaseUid: string, offer: boolean, courier?: any) {
   const raw = object(row?.raw_payload);
   const customer = object(raw?.cliente);
   const address = object(row?.delivery_address || raw?.endereco);
@@ -172,6 +199,7 @@ function orderDocument(row: any, firebaseUid: string, offer: boolean) {
     createdAt: row?.created_at,
     updatedAt: row?.updated_at,
     _rejectedBy: rejected,
+    trackingConfig: trackingConfig(courier),
   };
   if (raw?.up_location) data.localizacaoEntregador = raw.up_location;
   return { id: `supabase:${row.id}`, data };
@@ -180,24 +208,51 @@ function orderDocument(row: any, firebaseUid: string, offer: boolean) {
 async function ensureCourier(admin: any, firebaseUid: string, profile: Record<string, any>) {
   const existing = await admin.from("couriers").select("*").eq("firebase_uid", firebaseUid).maybeSingle();
   if (existing.error) throw new Error(`courier_lookup_failed: ${existing.error.message}`);
+
   const oldMetadata = object(existing.data?.metadata);
+  const approvalStatus = first(profile, "statusAprovacao") || "aprovado";
+  const vehicleType = first(profile, "tipoVeiculo", "modalidade");
+  const name = first(profile, "nomeCompleto", "nome") || null;
+  const phone = first(profile, "whatsapp", "telefone") || null;
+
   const metadata = {
     ...oldMetadata,
-    approval_status: first(profile, "statusAprovacao") || "aprovado",
-    vehicle_type: first(profile, "tipoVeiculo", "modalidade"),
+    approval_status: approvalStatus,
+    vehicle_type: vehicleType,
     app_source: APP_SOURCE,
   };
-  const values = {
+
+  if (existing.data) {
+    const same =
+      text(existing.data.firebase_id) === firebaseUid &&
+      text(existing.data.name) === text(name) &&
+      text(existing.data.phone) === text(phone) &&
+      text(oldMetadata.approval_status) === text(approvalStatus) &&
+      text(oldMetadata.vehicle_type) === text(vehicleType) &&
+      text(oldMetadata.app_source) === APP_SOURCE;
+    if (same) return existing.data;
+
+    const updated = await admin.from("couriers").update({
+      firebase_id: firebaseUid,
+      name,
+      phone,
+      metadata,
+      updated_at: new Date().toISOString(),
+    }).eq("id", existing.data.id).select("*").single();
+    if (updated.error) throw new Error(`courier_update_failed: ${updated.error.message}`);
+    return updated.data;
+  }
+
+  const inserted = await admin.from("couriers").insert({
     firebase_uid: firebaseUid,
     firebase_id: firebaseUid,
-    name: first(profile, "nomeCompleto", "nome") || null,
-    phone: first(profile, "whatsapp", "telefone") || null,
+    name,
+    phone,
     metadata,
     updated_at: new Date().toISOString(),
-  };
-  const saved = await admin.from("couriers").upsert(values, { onConflict: "firebase_uid" }).select("*").single();
-  if (saved.error) throw new Error(`courier_upsert_failed: ${saved.error.message}`);
-  return saved.data;
+  }).select("*").single();
+  if (inserted.error) throw new Error(`courier_insert_failed: ${inserted.error.message}`);
+  return inserted.data;
 }
 
 const ORDER_SELECT = "id,firebase_id,customer_id,courier_id,order_code,status,fulfillment_type,delivery_fee,total,payment_method,payment_status,payment_details,delivery_address,customer_note,tracking_enabled,pickup_code,raw_payload,created_at,updated_at,accepted_at,completed_at,customers(name,phone)";
@@ -244,6 +299,51 @@ async function assignedOrder(admin: any, courier: any, missionId: string) {
   if (!row) throw new Error("Entrega não encontrada.");
   if (row.courier_id !== courier.id) throw new Error("Esta entrega não está atribuída a você.");
   return row;
+}
+
+
+const CUSTOMER_PUSH_URL = "https://rodriguesacaiecia.netlify.app/api/push-send";
+const CUSTOMER_VAPID_PUBLIC_KEY = "BDYgQcOCn0z6bYHSvyuHa-0E5QbcXqRaapOQ-0Ujh4YYXZ6yZCKZu4u7xhlI90NNB_O6sYfbg7EUmdybmTLILhc";
+
+function customerPushMessage(status: string, order: any) {
+  const code=text(order?.order_code||order?.raw_payload?.codigoPedido||"");
+  const input=text(status).toUpperCase();
+  const aliases:Record<string,string>={
+    SAIU_ENTREGA:"EM_ENTREGA",SAIU_PARA_ENTREGA:"EM_ENTREGA",A_CAMINHO_CLIENTE:"EM_ENTREGA",DESPACHADO:"EM_ENTREGA",
+    ENTREGUE:"CONCLUIDO",FINALIZADO:"CONCLUIDO",CONCLUÍDO:"CONCLUIDO"
+  };
+  const normalized=aliases[input]||input;
+  const messages:Record<string,{title:string,body:string,hold?:boolean}>={
+    EM_ENTREGA:{title:"Saiu para entrega",body:"O pedido #"+code+" está a caminho.",hold:true},
+    NO_CLIENTE:{title:"Entregador no local",body:"O entregador do pedido #"+code+" chegou ao endereço.",hold:true},
+    CONCLUIDO:{title:"Pedido entregue",body:"O pedido #"+code+" foi concluído.",hold:true}
+  };
+  return messages[normalized]||null;
+}
+async function sendCustomerPush(admin:any,order:any,status:string){
+  const message=customerPushMessage(status,order);
+  if(!message||!order?.customer_id)return;
+  try{
+    const customer=await admin.from("customers").select("id,auth_user_id").eq("id",order.customer_id).maybeSingle();
+    if(customer.error||!customer.data?.id)return;
+    const ownerIds=[customer.data.id,customer.data.auth_user_id].filter(Boolean);
+    const subscriptions=await admin.from("web_push_subscriptions").select("endpoint,p256dh,auth").in("owner_id",ownerIds).eq("active",true).limit(20);
+    if(subscriptions.error||!(subscriptions.data||[]).length)return;
+    const config=await admin.from("push_private_config").select("value").eq("id","web_push").maybeSingle();
+    const bridgeSecret=text(config.data?.value?.bridge_secret);
+    if(!bridgeSecret)return;
+    const receiptToken=text(order.receipt_token||order.raw_payload?.receiptToken);
+    const route=receiptToken?"/v30/acompanhar/"+encodeURIComponent(receiptToken):"/v30/pedidos";
+    const response=await fetch(CUSTOMER_PUSH_URL,{method:"POST",headers:{"Content-Type":"application/json","x-push-bridge":bridgeSecret},body:JSON.stringify({
+      vapid_public_key:CUSTOMER_VAPID_PUBLIC_KEY,
+      subscriptions:subscriptions.data,
+      payload:{title:message.title,body:message.body,url:route,tag:"rodrigues-order-"+text(order.id),orderId:text(order.firebase_id||order.id),receiptToken,status:text(status).toUpperCase(),requireInteraction:!!message.hold,vibrate:[320,120,320,120,520]}
+    }),signal:AbortSignal.timeout(6500)});
+    if(!response.ok){console.warn("[driver customer-push]",response.status);return}
+    const result=await response.json().catch(()=>({}));
+    const expired=(Array.isArray(result?.failed)?result.failed:[]).filter((x:any)=>[404,410].includes(Number(x?.statusCode))).map((x:any)=>text(x?.endpoint)).filter(Boolean);
+    if(expired.length)await admin.from("web_push_subscriptions").update({active:false,updated_at:new Date().toISOString()}).in("endpoint",expired);
+  }catch(error){console.warn("[driver customer-push]",error instanceof Error?error.message:String(error))}
 }
 
 Deno.serve(async (req: Request) => {
@@ -306,15 +406,15 @@ Deno.serve(async (req: Request) => {
 
     if (action === "offer") {
       const current = await currentOrder(admin, courier.id);
-      if (current) return json({ ok: true, document: orderDocument(current, firebaseUid, false) });
+      if (current) return json({ ok: true, document: orderDocument(current, firebaseUid, false, courier) });
       const offered = await offeredOrder(admin, firebaseUid);
-      return json({ ok: true, document: offered ? orderDocument(offered, firebaseUid, true) : null });
+      return json({ ok: true, document: offered ? orderDocument(offered, firebaseUid, true, courier) : null });
     }
 
     if (action === "history") {
       const result = await admin.from("orders").select(ORDER_SELECT).eq("courier_id", courier.id).order("updated_at", { ascending: false }).limit(40);
       if (result.error) throw new Error(`history_failed: ${result.error.message}`);
-      const documents = (result.data || []).filter((row: any) => TERMINAL_STATUSES.has(text(row.status).toUpperCase())).map((row: any) => orderDocument(row, firebaseUid, false));
+      const documents = (result.data || []).filter((row: any) => TERMINAL_STATUSES.has(text(row.status).toUpperCase())).map((row: any) => orderDocument(row, firebaseUid, false, courier));
       return json({ ok: true, documents });
     }
 
@@ -328,7 +428,7 @@ Deno.serve(async (req: Request) => {
       const rejected = Array.isArray(raw.up_rejected_by) ? raw.up_rejected_by : [];
       const allowedOffer = !row.courier_id && OFFER_STATUSES.has(text(row.status).toUpperCase()) && !rejected.includes(firebaseUid);
       if (row.courier_id !== courier.id && !allowedOffer) return json({ error: "mission_forbidden", message: "Esta entrega não está disponível para você." }, 403);
-      return json({ ok: true, document: orderDocument(row, firebaseUid, !row.courier_id) });
+      return json({ ok: true, document: orderDocument(row, firebaseUid, !row.courier_id, courier) });
     }
 
     if (action === "accept") {
@@ -376,6 +476,10 @@ Deno.serve(async (req: Request) => {
       if (saved.error) throw new Error(`stage_failed: ${saved.error.message}`);
       await admin.from("couriers").update({ status: state === "TO_CUSTOMER" ? "delivery" : state === "AT_CUSTOMER" ? "at_customer" : "pickup", tracking_enabled: true, metadata: { ...object(courier.metadata), current_order_id: missionId, up_state: state }, updated_at: now }).eq("id", courier.id);
       await event(admin, missionId, deliveryStatus || status, firebaseUid, "Etapa atualizada pelo entregador.", { up_state: state });
+      if (state === "TO_CUSTOMER" || state === "AT_CUSTOMER") {
+        const latest = await orderById(admin, missionId);
+        if (latest) await sendCustomerPush(admin, latest, state === "AT_CUSTOMER" ? "NO_CLIENTE" : "EM_ENTREGA");
+      }
       return json({ ok: true });
     }
 
@@ -388,6 +492,8 @@ Deno.serve(async (req: Request) => {
       if (saved.error) throw new Error(`pickup_failed: ${saved.error.message}`);
       await admin.from("couriers").update({ status: "delivery", tracking_enabled: true, metadata: { ...object(courier.metadata), current_order_id: missionId, up_state: "TO_CUSTOMER" }, updated_at: now }).eq("id", courier.id);
       await event(admin, missionId, "SAIU_PARA_ENTREGA", firebaseUid, "Pedido retirado na loja.");
+      const latest = await orderById(admin, missionId);
+      if (latest) await sendCustomerPush(admin, latest, "SAIU_PARA_ENTREGA");
       return json({ ok: true });
     }
 
@@ -401,20 +507,79 @@ Deno.serve(async (req: Request) => {
       if (saved.error) throw new Error(`finish_failed: ${saved.error.message}`);
       await admin.from("couriers").update({ status: courier.online ? "available" : "offline", tracking_enabled: false, metadata: { ...object(courier.metadata), current_order_id: null, up_state: "DELIVERED" }, updated_at: now }).eq("id", courier.id);
       await event(admin, missionId, "ENTREGUE", firebaseUid, "Entrega concluída no UP Entregas.", { received_amount: received });
+      const latest = await orderById(admin, missionId);
+      if (latest) await sendCustomerPush(admin, latest, "ENTREGUE");
       return json({ ok: true });
     }
 
     if (action === "location") {
       const lat = num(body.lat), lng = num(body.lng);
       if (Math.abs(lat) > 90 || Math.abs(lng) > 180 || (lat === 0 && lng === 0)) return json({ error: "invalid_location", message: "Localização inválida." }, 400);
-      const location = { lat, lng, accuracy: num(body.accuracy), speed: num(body.speed), bearing: num(body.bearing), visible_to_customer: bool(body.visible_to_customer), traveled_delivery_meters: num(body.traveled_delivery_meters), updated_at: now };
-      const courierUpdate = await admin.from("couriers").update({ current_lat: lat, current_lng: lng, last_location_at: now, tracking_enabled: true, metadata: { ...object(courier.metadata), current_order_id: missionId, last_location: location }, updated_at: now }).eq("id", courier.id);
+
+      const config = trackingConfig(courier);
+      const metadata = object(courier.metadata);
+      const previousLocation = object(metadata.last_location);
+      const previousAt = Date.parse(text(previousLocation.updated_at));
+      const serverMinMs = Number(config.server_min_interval_seconds) * 1000;
+      if (Number.isFinite(previousAt) && previousAt > 0 && Date.now() - previousAt < serverMinMs) {
+        return json({ ok: true, skipped: true, reason: "server_throttle" });
+      }
+
+      const visibleToCustomer = bool(body.visible_to_customer);
+      const location = {
+        lat,
+        lng,
+        accuracy: num(body.accuracy),
+        speed: num(body.speed),
+        bearing: num(body.bearing),
+        visible_to_customer: visibleToCustomer,
+        traveled_delivery_meters: num(body.traveled_delivery_meters),
+        updated_at: now,
+      };
+
+      const courierUpdate = await admin.from("couriers").update({
+        current_lat: lat,
+        current_lng: lng,
+        last_location_at: now,
+        tracking_enabled: true,
+        metadata: { ...metadata, current_order_id: missionId, last_location: location },
+        updated_at: now,
+      }).eq("id", courier.id);
       if (courierUpdate.error) throw new Error(`courier_location_failed: ${courierUpdate.error.message}`);
-      const point = await admin.from("tracking_points").insert({ order_id: missionId, courier_id: courier.id, lat, lng, accuracy_m: num(body.accuracy), speed_mps: num(body.speed), heading: num(body.bearing), recorded_at: now, raw_payload: { visible_to_customer: bool(body.visible_to_customer), traveled_delivery_meters: num(body.traveled_delivery_meters), source: APP_SOURCE } });
-      if (point.error) throw new Error(`tracking_point_failed: ${point.error.message}`);
-      const orderUpdate = await admin.from("orders").update({ raw_payload: { ...raw, up_location: location }, updated_at: now }).eq("id", missionId).eq("courier_id", courier.id);
-      if (orderUpdate.error) throw new Error(`order_location_failed: ${orderUpdate.error.message}`);
-      return json({ ok: true });
+
+      if (config.history_enabled) {
+        const point = await admin.from("tracking_points").insert({
+          order_id: missionId,
+          courier_id: courier.id,
+          lat,
+          lng,
+          accuracy_m: num(body.accuracy),
+          speed_mps: num(body.speed),
+          heading: num(body.bearing),
+          recorded_at: now,
+          raw_payload: {
+            visible_to_customer: visibleToCustomer,
+            traveled_delivery_meters: num(body.traveled_delivery_meters),
+            source: APP_SOURCE,
+          },
+        });
+        if (point.error) throw new Error(`tracking_point_failed: ${point.error.message}`);
+      }
+
+      if (visibleToCustomer) {
+        const oldOrderLocation = object(raw.up_location);
+        const oldOrderAt = Date.parse(text(oldOrderLocation.updated_at));
+        const mirrorMs = Number(config.order_mirror_interval_seconds) * 1000;
+        const shouldMirror = !Number.isFinite(oldOrderAt) || oldOrderAt <= 0 || Date.now() - oldOrderAt >= mirrorMs;
+        if (shouldMirror) {
+          const orderUpdate = await admin.from("orders").update({
+            raw_payload: { ...raw, up_location: location },
+          }).eq("id", missionId).eq("courier_id", courier.id);
+          if (orderUpdate.error) throw new Error(`order_location_failed: ${orderUpdate.error.message}`);
+        }
+      }
+
+      return json({ ok: true, history_saved: Boolean(config.history_enabled) });
     }
 
     if (action === "occurrence") {

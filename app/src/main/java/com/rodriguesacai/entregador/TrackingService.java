@@ -42,6 +42,7 @@ public class TrackingService extends Service {
     private double lastDistanceLng = Double.NaN;
     private float lastDistanceAccuracy = 0f;
     private long lastDistanceTime = 0L;
+    private final TrackingPolicy trackingPolicy = new TrackingPolicy();
 
     @Override public void onCreate() {
         super.onCreate();
@@ -99,6 +100,7 @@ public class TrackingService extends Service {
                     resetDistanceState();
                 }
                 lastDeliveryPhase = deliveryPhase;
+                trackingPolicy.apply(d);
                 customerVisible = deliveryPhase;
                 Boolean explicit = d.getBoolean("rastreamentoClienteHabilitado");
                 customerTrackingEnabled = explicit == null || explicit;
@@ -128,12 +130,12 @@ public class TrackingService extends Service {
 
     private String trackingText() {
         if (customerVisible && customerTrackingEnabled) {
-            return "A caminho do cliente • mapa compartilhado durante a entrega";
+            return "A caminho do cliente • mapa compartilhado • modo " + trackingPolicy.modeLabel();
         }
         if (customerVisible) {
             return "A caminho do cliente • GPS interno da missão ativo";
         }
-        return "A caminho da loja • GPS interno da missão ativo";
+        return "A caminho da loja • GPS econômico • modo " + trackingPolicy.modeLabel();
     }
 
     private void updateForegroundNotification() {
@@ -157,12 +159,12 @@ public class TrackingService extends Service {
                 Location l = r.getLastLocation();
                 if (l != null && !driverId.isEmpty() && !rideId.isEmpty()) {
                     updateTraveledDistance(l);
-                    DriverRepository repo = new DriverRepository();
+                    long now = System.currentTimeMillis();
+                    if (!trackingPolicy.shouldUpload(l, customerVisible, now)) return;
                     repo.saveMissionLocation(driverId, l.getLatitude(), l.getLongitude(),
-                            l.getAccuracy(), l.getSpeed(), l.getBearing(), rideId, missionType,
-                            customerVisible, traveledDeliveryMeters);
-                    DeviceStatus.Battery battery = DeviceStatus.battery(TrackingService.this);
-                    if (battery.level >= 0) repo.saveDeviceTelemetry(driverId, battery.level, battery.charging);
+                                    l.getAccuracy(), l.getSpeed(), l.getBearing(), rideId, missionType,
+                                    customerVisible, traveledDeliveryMeters)
+                            .addOnSuccessListener(unused -> trackingPolicy.markUploaded(l, now));
                 }
             }
         };
