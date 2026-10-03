@@ -41,7 +41,8 @@ public class TrackingService extends Service {
     private double lastDistanceLat = Double.NaN;
     private double lastDistanceLng = Double.NaN;
     private float lastDistanceAccuracy = 0f;
-    private long lastDistanceTime = 0L;\n    private final TrackingPolicy trackingPolicy = new TrackingPolicy();
+    private long lastDistanceTime = 0L;
+    private final TrackingPolicy trackingPolicy = new TrackingPolicy();
 
     @Override public void onCreate() {
         super.onCreate();
@@ -98,7 +99,8 @@ public class TrackingService extends Service {
                 } else if (deliveryPhase && !lastDeliveryPhase) {
                     resetDistanceState();
                 }
-                lastDeliveryPhase = deliveryPhase;\n                trackingPolicy.apply(d);
+                lastDeliveryPhase = deliveryPhase;
+                trackingPolicy.apply(d);
                 customerVisible = deliveryPhase;
                 Boolean explicit = d.getBoolean("rastreamentoClienteHabilitado");
                 customerTrackingEnabled = explicit == null || explicit;
