@@ -165,7 +165,7 @@ public class DriverRepository {
                             if (!samePendingOffer) emit.run();
                         })
                         .addOnCompleteListener(task -> {
-                            if (!removed[0]) handler.postDelayed(this, 7000L);
+                            if (!removed[0]) handler.postDelayed(this, 20_000L);
                         });
             }
         };
@@ -1677,7 +1677,7 @@ public class DriverRepository {
                         .addOnSuccessListener(cb::onRide)
                         .addOnFailureListener(cb::onError)
                         .addOnCompleteListener(task -> {
-                            if (!removed[0]) handler.postDelayed(this, 6000L);
+                            if (!removed[0]) handler.postDelayed(this, 20_000L);
                         });
             }
         };
