@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.56.1";
+import {nextStage,canPickup,canFinish,canRecordLocation,canExposeLocationToCustomer} from "../_shared/up-operations.mjs";
 import { createRemoteJWKSet, jwtVerify } from "npm:jose@5.9.6";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
@@ -468,10 +469,11 @@ Deno.serve(async (req: Request) => {
     if (action === "stage") {
       const status = text(body.status).toUpperCase();
       const deliveryStatus = text(body.delivery_status).toUpperCase();
-      const state = status === "COLETANDO" ? "AT_STORE" : status === "NO_CLIENTE" ? "AT_CUSTOMER" : status === "EM_ENTREGA" ? "TO_CUSTOMER" : "TO_STORE";
+      const state = nextStage(row,status);
+      if (!state) return json({ error:"invalid_mission_transition",message:"Esta etapa não pode ser confirmada antes da etapa anterior." },409);
       const nextRaw: Record<string, any> = { ...raw, up_state: state, up_status: status, up_delivery_status: deliveryStatus, up_status_at: now, up_source: APP_SOURCE };
       const timestampField = text(body.timestamp_field);
-      if (timestampField && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(timestampField)) nextRaw[timestampField] = now;
+      if (["chegouLojaEm","chegouClienteEm"].includes(timestampField)) nextRaw[timestampField] = now;
       const saved = await admin.from("orders").update({ raw_payload: nextRaw, updated_at: now }).eq("id", missionId).eq("courier_id", courier.id);
       if (saved.error) throw new Error(`stage_failed: ${saved.error.message}`);
       await admin.from("couriers").update({ status: state === "TO_CUSTOMER" ? "delivery" : state === "AT_CUSTOMER" ? "at_customer" : "pickup", tracking_enabled: true, metadata: { ...object(courier.metadata), current_order_id: missionId, up_state: state }, updated_at: now }).eq("id", courier.id);
@@ -484,6 +486,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "pickup") {
+      if (!canPickup(row)) return json({error:"pickup_not_available",message:"Confirme a chegada à loja antes da retirada."},409);
       const expected = first(raw, "codigoRetirada", "pickupCode") || text(row.pickup_code);
       const entered = text(body.code);
       if (expected && expected !== entered) return json({ error: "invalid_pickup_code", message: "Código de retirada incorreto." }, 409);
@@ -498,6 +501,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "finish") {
+      if (!canFinish(row)) return json({error:"delivery_not_ready",message:"Confirme chegada ao cliente antes de concluir a entrega."},409);
       const expected = first(raw, "codigoEntrega", "deliveryCode");
       const entered = text(body.code);
       if (expected && expected !== entered) return json({ error: "invalid_delivery_code", message: "Código de entrega incorreto." }, 409);
@@ -513,6 +517,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "location") {
+      if (!canRecordLocation(row)) return json({error:"tracking_not_active",message:"Sem missão ativa para registrar localização."},409);
       const lat = num(body.lat), lng = num(body.lng);
       if (Math.abs(lat) > 90 || Math.abs(lng) > 180 || (lat === 0 && lng === 0)) return json({ error: "invalid_location", message: "Localização inválida." }, 400);
 
@@ -525,7 +530,7 @@ Deno.serve(async (req: Request) => {
         return json({ ok: true, skipped: true, reason: "server_throttle" });
       }
 
-      const visibleToCustomer = bool(body.visible_to_customer);
+      const visibleToCustomer = canExposeLocationToCustomer(row, bool(body.visible_to_customer));
       const location = {
         lat,
         lng,
