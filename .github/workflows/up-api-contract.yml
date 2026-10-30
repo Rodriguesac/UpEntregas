@@ -1,0 +1,20 @@
+name: Validar contrato logístico UP
+on:
+  push:
+    branches:
+      - rebuild/up-core-integration-20261030
+  pull_request:
+    paths:
+      - "supabase/functions/**"
+      - ".github/workflows/up-api-contract.yml"
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node --test supabase/functions/_shared/*.test.mjs
