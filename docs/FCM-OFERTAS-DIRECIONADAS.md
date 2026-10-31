@@ -53,3 +53,11 @@ Nenhum endereço, telefone ou preço é enviado pelo FCM. O UP carrega dados da 
 ## Compatibilidade e custos
 
 Usar FCM como mecanismo de aviso, mantendo a consulta econômica à fila Supabase como fallback. Push não é garantia de entrega imediata (restrições de bateria, aparelho offline, permissões). A conta de serviço nunca deve ser registrada em log nem devolvida à interface.
+
+## Revisão de missão ativa — 31/10/2026
+
+- O endpoint `driver-api` verifica a missão ativa imediatamente antes de aceitar uma nova oferta. Quando a corrida já pertence ao entregador, mantém o aceite idempotente. Quando pertence a outra missão ativa, rejeita nova aceitação.
+- O comando `presence` não redefine para `available` o status do motoboy que já possui missão ativa, inclusive após reconexão.
+- A busca de missão ativa filtra estados terminais **no banco**, evitando a falha anterior de examinar só as últimas 20 corridas.
+- As correções estão apenas na branch de homologação e possuem testes de regressão.
+- **Limitação:** corridas absolutamente simultâneas ainda requerem teste de concorrência transacional antes da produção. Não aprovar múltiplas rotas sem o contrato correspondente.
