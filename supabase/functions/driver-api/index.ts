@@ -591,8 +591,10 @@ Deno.serve(async (req: Request) => {
         tracking_enabled: true,
         metadata: { ...metadata, current_order_id: missionId, last_location: location },
         updated_at: now,
-      }).eq("id", courier.id);
+      }).eq("id", courier.id).eq("updated_at",courier.updated_at).select("id").maybeSingle();
       if (courierUpdate.error) throw new Error(`courier_location_failed: ${courierUpdate.error.message}`);
+      if (!courierUpdate.data) return json({error:"mission_changed",
+        message:"A missão ou a permissão de rastreamento mudou. Atualize a entrega."},409);
 
       if (config.history_enabled) {
         const point = await admin.from("tracking_points").insert({
