@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.56.1";
-import {nextStage,canPickup,canFinish,canRecordLocation,canExposeLocationToCustomer} from "../_shared/up-operations.mjs";
+import {nextStage,canPickup,canFinish,canRecordLocation,canExposeLocationToCustomer,canOfferToCourier} from "../_shared/up-operations.mjs";
 import { createRemoteJWKSet, jwtVerify } from "npm:jose@5.9.6";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
@@ -270,14 +270,11 @@ async function currentOrder(admin: any, courierId: string) {
   return (result.data || []).find((row: any) => !TERMINAL_STATUSES.has(text(row.status).toUpperCase())) || null;
 }
 
-async function offeredOrder(admin: any, firebaseUid: string) {
+async function offeredOrder(admin: any, courier: any, firebaseUid: string) {
   const result = await admin.from("orders").select(ORDER_SELECT).is("courier_id", null).order("created_at", { ascending: true }).limit(30);
   if (result.error) throw new Error(`offer_lookup_failed: ${result.error.message}`);
   return (result.data || []).find((row: any) => {
-    if (text(row.fulfillment_type).toUpperCase() !== "ENTREGA" && text(row.fulfillment_type).toUpperCase() !== "DELIVERY") return false;
-    if (!OFFER_STATUSES.has(text(row.status).toUpperCase())) return false;
-    const rejected = object(row.raw_payload)?.up_rejected_by;
-    return !Array.isArray(rejected) || !rejected.includes(firebaseUid);
+    return canOfferToCourier(row,courier.id,firebaseUid);
   }) || null;
 }
 
@@ -408,7 +405,7 @@ Deno.serve(async (req: Request) => {
     if (action === "offer") {
       const current = await currentOrder(admin, courier.id);
       if (current) return json({ ok: true, document: orderDocument(current, firebaseUid, false, courier) });
-      const offered = await offeredOrder(admin, firebaseUid);
+      const offered = await offeredOrder(admin, courier, firebaseUid);
       return json({ ok: true, document: offered ? orderDocument(offered, firebaseUid, true, courier) : null });
     }
 
@@ -427,7 +424,7 @@ Deno.serve(async (req: Request) => {
       if (!row) return json({ error: "mission_not_found", message: "Entrega não encontrada." }, 404);
       const raw = object(row.raw_payload);
       const rejected = Array.isArray(raw.up_rejected_by) ? raw.up_rejected_by : [];
-      const allowedOffer = !row.courier_id && OFFER_STATUSES.has(text(row.status).toUpperCase()) && !rejected.includes(firebaseUid);
+      const allowedOffer = canOfferToCourier(row,courier.id,firebaseUid);
       if (row.courier_id !== courier.id && !allowedOffer) return json({ error: "mission_forbidden", message: "Esta entrega não está disponível para você." }, 403);
       return json({ ok: true, document: orderDocument(row, firebaseUid, !row.courier_id, courier) });
     }
@@ -437,8 +434,9 @@ Deno.serve(async (req: Request) => {
       if (!row) return json({ error: "mission_not_found", message: "Entrega não encontrada." }, 404);
       if (row.courier_id && row.courier_id !== courier.id) return json({ error: "mission_taken", message: "Esta entrega já foi aceita por outro entregador." }, 409);
       if (row.courier_id === courier.id && text(row.raw_payload?.up_state) === "TO_STORE") return json({ok:true,already_accepted:true});
-      if (!row.courier_id && !OFFER_STATUSES.has(text(row.status).toUpperCase())) return json({ error: "mission_not_available", message: "Esta entrega não está mais disponível." }, 409);
+      if (!row.courier_id && !canOfferToCourier(row,courier.id,firebaseUid)) return json({ error: "mission_not_available", message: "Esta oferta não está disponível para você." }, 409);
       const raw = { ...object(row.raw_payload), up_state: "TO_STORE", up_status: "ACEITA", up_delivery_status: "ENTREGADOR_A_CAMINHO_LOJA", up_driver_uid: firebaseUid, up_accepted_at: now, up_source: APP_SOURCE };
+      delete raw.up_target_courier_id;
       let update = admin.from("orders").update({ courier_id: courier.id, raw_payload: raw, accepted_at: row.accepted_at || now, updated_at: now }).eq("id", missionId);
       if (!row.courier_id) update = update.is("courier_id", null);
       update = update.eq("updated_at",row.updated_at);
@@ -456,10 +454,12 @@ Deno.serve(async (req: Request) => {
       if (row.courier_id && row.courier_id !== courier.id) return json({ error: "mission_forbidden", message: "Esta entrega não está disponível para você." }, 403);
       if (row.courier_id === courier.id) return json({ error: "mission_already_accepted", message: "A entrega já foi aceita. Use a opção de ajuda." }, 409);
       const raw = object(row.raw_payload);
+      if (raw.up_target_courier_id && String(raw.up_target_courier_id)!==String(courier.id)) return json({error:"offer_for_other_driver",message:"Oferta destinada a outro entregador."},403);
       const rejected = Array.isArray(raw.up_rejected_by) ? [...raw.up_rejected_by] : [];
       if (rejected.includes(firebaseUid)) return json({ok:true,already_rejected:true});
       rejected.push(firebaseUid);
       const nextRaw = { ...raw, up_rejected_by: rejected, up_last_rejection_reason: action === "expire" ? "Oferta expirada" : text(body.reason), up_last_rejection_at: now };
+      delete nextRaw.up_target_courier_id;
       const saved = await admin.from("orders").update({ raw_payload: nextRaw, updated_at: now }).eq("id", missionId).is("courier_id", null).eq("updated_at",row.updated_at).select("id").maybeSingle();
       if (saved.error) throw new Error(`reject_failed: ${saved.error.message}`);
       if (!saved.data) return json({error:"offer_changed",message:"Esta oferta mudou. Atualize a lista."},409);
