@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.56.1";
-import {nextStage,canPickup,canFinish,canRecordLocation,canExposeLocationToCustomer,canOfferToCourier,parseGpsCoordinates} from "../_shared/up-operations.mjs";
+import {nextStage,canPickup,canFinish,canRecordLocation,canExposeLocationToCustomer,canOfferToCourier,parseGpsCoordinates,shouldThrottleGpsSample} from "../_shared/up-operations.mjs";
 import {upAtomicDispatch} from "../_shared/up-atomic-dispatch.mjs";
 import { createRemoteJWKSet, jwtVerify } from "npm:jose@5.9.6";
 
@@ -578,11 +578,9 @@ Deno.serve(async (req: Request) => {
       const config = trackingConfig(courier);
       const metadata = object(courier.metadata);
       const previousLocation = object(metadata.last_location);
-      const previousAt = Date.parse(text(previousLocation.updated_at));
       const serverMinMs = Number(config.server_min_interval_seconds) * 1000;
-      // O limite de frequência não pode atrasar o PRIMEIRO GPS de uma nova missão.
-      if (String(previousLocation.order_id||"")===String(missionId) &&
-          Number.isFinite(previousAt) && previousAt > 0 && Date.now() - previousAt < serverMinMs) {
+      // O primeiro ponto de outra missão não herda o throttle do pedido anterior.
+      if (shouldThrottleGpsSample(previousLocation,missionId,Date.now(),serverMinMs)) {
         return json({ ok: true, skipped: true, reason: "server_throttle" });
       }
 
