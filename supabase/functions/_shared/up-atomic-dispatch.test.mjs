@@ -12,7 +12,7 @@ test("Gadministra, Rodrigues Gestor e UP usam a mesma assinatura RPC",async()=>{
  assert.equal(result.ok,true);
  assert.deepEqual(called,{name:"up_atomic_dispatch",args:{
   p_action:"offer",p_order_id:orderId,p_courier_id:courierId,
-  p_firebase_uid:null,p_actor_id:"owner",p_source:"GADM_UP_DISPATCH"
+  p_firebase_uid:null,p_actor_id:"owner",p_source:"GADM_UP_DISPATCH",p_cancel_reason:null
  }});
 });
 
@@ -40,4 +40,14 @@ test("resposta sem confirmação explícita também falha fechada",async()=>{
  const admin={rpc:async()=>({data:{ok:false},error:null})};
  await assert.rejects(upAtomicDispatch(admin,{action:"offer",orderId,courierId}),
   e=>e instanceof AtomicDispatchError&&e.status===503);
+});
+
+test("cancelamento envia motivo ao mesmo procedimento atômico",async()=>{
+ let args;
+ const admin={rpc:async(_,v)=>{args=v;return {data:{ok:true,status:"CANCELADO"},error:null}}};
+ const response=await upAtomicDispatch(admin,{action:"cancel",orderId,courierId,
+  source:"GADM_UP_DISPATCH",actorId:"gestor",reason:"Pedido cancelado pela loja"});
+ assert.equal(response.status,"CANCELADO");
+ assert.equal(args.p_cancel_reason,"Pedido cancelado pela loja");
+ assert.equal(args.p_action,"cancel");
 });
