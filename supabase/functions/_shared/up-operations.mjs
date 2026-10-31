@@ -39,3 +39,17 @@ export function canExposeLocationToCustomer(order,requested){
     Boolean(order.raw_payload?.up_pickup_at) &&
     [UP.TO_CUSTOMER,UP.AT_CUSTOMER].includes(normalize(order.raw_payload?.up_state));
 }
+
+/** A oferta específica não pode aparecer a outro motoboy.
+ * Ofertas sem destino permanecem compatíveis com o fluxo antigo. */
+export function canOfferToCourier(order,courierId,firebaseUid){
+  if(!order||order.courier_id)return false;
+  if(!["ENTREGA","DELIVERY"].includes(normalize(order.fulfillment_type)))return false;
+  if(!["AGUARDANDO_ENTREGADOR","BUSCANDO_ENTREGADOR","PRONTO","DESPACHADO"].includes(normalize(order.status)))return false;
+  const raw=order.raw_payload||{};
+  const target=String(raw.up_target_courier_id||"");
+  if(target&&target!==String(courierId||""))return false;
+  const rejected=raw.up_rejected_by;
+  if(Array.isArray(rejected)&&rejected.includes(firebaseUid))return false;
+  return true;
+}
