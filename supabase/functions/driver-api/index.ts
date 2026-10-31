@@ -580,7 +580,9 @@ Deno.serve(async (req: Request) => {
       const previousLocation = object(metadata.last_location);
       const previousAt = Date.parse(text(previousLocation.updated_at));
       const serverMinMs = Number(config.server_min_interval_seconds) * 1000;
-      if (Number.isFinite(previousAt) && previousAt > 0 && Date.now() - previousAt < serverMinMs) {
+      // O limite de frequência não pode atrasar o PRIMEIRO GPS de uma nova missão.
+      if (String(previousLocation.order_id||"")===String(missionId) &&
+          Number.isFinite(previousAt) && previousAt > 0 && Date.now() - previousAt < serverMinMs) {
         return json({ ok: true, skipped: true, reason: "server_throttle" });
       }
 
