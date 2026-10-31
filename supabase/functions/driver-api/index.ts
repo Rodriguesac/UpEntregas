@@ -435,7 +435,7 @@ Deno.serve(async (req: Request) => {
       if (row.courier_id && row.courier_id !== courier.id) return json({ error: "mission_taken", message: "Esta entrega já foi aceita por outro entregador." }, 409);
       if (row.courier_id === courier.id && text(row.raw_payload?.up_state) === "TO_STORE") return json({ok:true,already_accepted:true});
       if (!row.courier_id && !canOfferToCourier(row,courier.id,firebaseUid)) return json({ error: "mission_not_available", message: "Esta oferta não está disponível para você." }, 409);
-      const raw = { ...object(row.raw_payload), up_state: "TO_STORE", up_status: "ACEITA", up_delivery_status: "ENTREGADOR_A_CAMINHO_LOJA", up_driver_uid: firebaseUid, up_accepted_at: now, up_source: APP_SOURCE };
+      const raw: Record<string, any> = { ...object(row.raw_payload), up_state: "TO_STORE", up_status: "ACEITA", up_delivery_status: "ENTREGADOR_A_CAMINHO_LOJA", up_driver_uid: firebaseUid, up_accepted_at: now, up_source: APP_SOURCE };
       delete raw.up_target_courier_id;
       let update = admin.from("orders").update({ courier_id: courier.id, raw_payload: raw, accepted_at: row.accepted_at || now, updated_at: now }).eq("id", missionId);
       if (!row.courier_id) update = update.is("courier_id", null);
@@ -458,7 +458,7 @@ Deno.serve(async (req: Request) => {
       const rejected = Array.isArray(raw.up_rejected_by) ? [...raw.up_rejected_by] : [];
       if (rejected.includes(firebaseUid)) return json({ok:true,already_rejected:true});
       rejected.push(firebaseUid);
-      const nextRaw = { ...raw, up_rejected_by: rejected, up_last_rejection_reason: action === "expire" ? "Oferta expirada" : text(body.reason), up_last_rejection_at: now };
+      const nextRaw: Record<string, any> = { ...raw, up_rejected_by: rejected, up_last_rejection_reason: action === "expire" ? "Oferta expirada" : text(body.reason), up_last_rejection_at: now };
       delete nextRaw.up_target_courier_id;
       const saved = await admin.from("orders").update({ raw_payload: nextRaw, updated_at: now }).eq("id", missionId).is("courier_id", null).eq("updated_at",row.updated_at).select("id").maybeSingle();
       if (saved.error) throw new Error(`reject_failed: ${saved.error.message}`);
