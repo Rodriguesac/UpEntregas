@@ -271,11 +271,23 @@ async function currentOrder(admin: any, courierId: string) {
 }
 
 async function offeredOrder(admin: any, courier: any, firebaseUid: string) {
-  const result = await admin.from("orders").select(ORDER_SELECT).is("courier_id", null).order("created_at", { ascending: true }).limit(30);
+  // A oferta específica do gestor tem prioridade e não depende de estar
+  // entre os 30 pedidos antigos retornados pela fila genérica.
+  const dedicated = await admin.from("orders").select(ORDER_SELECT)
+    .is("courier_id", null)
+    .contains("raw_payload", { up_target_courier_id: courier.id })
+    .order("created_at", { ascending: true }).limit(20);
+  if (dedicated.error) throw new Error(`offer_dedicated_failed: ${dedicated.error.message}`);
+  const targeted = (dedicated.data || []).find((row: any) => canOfferToCourier(row,courier.id,firebaseUid));
+  if (targeted) return targeted;
+
+  // Compatibilidade com corridas antigas sem destinatário.
+  const result = await admin.from("orders").select(ORDER_SELECT).is("courier_id", null)
+    .order("created_at", { ascending: true }).limit(100);
   if (result.error) throw new Error(`offer_lookup_failed: ${result.error.message}`);
-  return (result.data || []).find((row: any) => {
-    return canOfferToCourier(row,courier.id,firebaseUid);
-  }) || null;
+  return (result.data || []).find((row: any) =>
+    !object(row.raw_payload).up_target_courier_id && canOfferToCourier(row,courier.id,firebaseUid)
+  ) || null;
 }
 
 async function event(admin: any, orderId: string, status: string, firebaseUid: string, note = "", raw: Record<string, any> = {}) {
