@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {UP,isActiveMission,nextStage,canPickup,canFinish,canRecordLocation,canExposeLocationToCustomer,canOfferToCourier,parseGpsCoordinates} from "./up-operations.mjs";
+import {UP,isActiveMission,nextStage,canPickup,canFinish,canRecordLocation,canExposeLocationToCustomer,canOfferToCourier,parseGpsCoordinates,shouldThrottleGpsSample} from "./up-operations.mjs";
 const order=(status="ACEITO",up_state=UP.TO_STORE,pickup=false)=>({id:"1",status,tracking_enabled:true,
   raw_payload:{up_state,...(pickup?{up_pickup_at:"2026-10-30T18:00:00Z"}:{})}});
 test("ciclo oficial: aceite, loja, retirada, cliente, conclusão",()=>{
@@ -75,4 +75,16 @@ test("coordenadas recebidas do app rejeitam campos ausentes e falsos zeros",()=>
  assert.deepEqual(parseGpsCoordinates("-20.45","-54.62"),{lat:-20.45,lng:-54.62});
  assert.deepEqual(parseGpsCoordinates(0,-54.62),{lat:0,lng:-54.62},
    "latitude zero é válida quando a longitude não é zero");
+});
+
+test("throttle GPS é por missão: nova corrida aceita primeira localização",()=>{
+ const now=Date.parse("2026-10-31T22:00:00.000Z");
+ const prev={order_id:"corrida-a",updated_at:new Date(now-2000).toISOString()};
+ assert.equal(shouldThrottleGpsSample(prev,"corrida-a",now,8000),true);
+ assert.equal(shouldThrottleGpsSample(prev,"corrida-b",now,8000),false);
+ assert.equal(shouldThrottleGpsSample({}, "corrida-b",now,8000),false);
+ prev.order_id="corrida-b";
+ assert.equal(shouldThrottleGpsSample(prev,"corrida-b",now,8000),true);
+ assert.equal(shouldThrottleGpsSample(prev,"corrida-b",now+8000,8000),false);
+ assert.equal(shouldThrottleGpsSample(prev,"corrida-b",now,0),false);
 });
