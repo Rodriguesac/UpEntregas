@@ -20,7 +20,8 @@ test("aceite verifica destinatário, atualização concorrente e não aceita dua
   const source=fs.readFileSync("supabase/functions/driver-api/index.ts","utf8");
   assert.match(source,/!canOfferToCourier\(row,courier\.id,firebaseUid\)/);
   assert.match(source,/already_accepted:true/);
-  assert.match(source,/update = update\.eq\("updated_at",row\.updated_at\)/);
+  assert.match(source,/const committed=await upAtomicDispatch\(admin,/,"aceite deve ocorrer em uma transação");
+  assert.match(source,/action:"accept",orderId:missionId,courierId:courier\.id/,"aceite deve identificar motoboy");
 });
 
 test("motoboy já em missão não volta a disponível após reconectar",()=>{
