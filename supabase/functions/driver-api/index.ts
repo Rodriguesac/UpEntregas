@@ -276,6 +276,7 @@ async function offeredOrder(admin: any, courier: any, firebaseUid: string) {
   const dedicated = await admin.from("orders").select(ORDER_SELECT)
     .is("courier_id", null)
     .contains("raw_payload", { up_target_courier_id: courier.id })
+    .in("status", ["AGUARDANDO_ENTREGADOR","BUSCANDO_ENTREGADOR","PRONTO","DESPACHADO"])
     .order("created_at", { ascending: true }).limit(20);
   if (dedicated.error) throw new Error(`offer_dedicated_failed: ${dedicated.error.message}`);
   const targeted = (dedicated.data || []).find((row: any) => canOfferToCourier(row,courier.id,firebaseUid));
@@ -283,6 +284,7 @@ async function offeredOrder(admin: any, courier: any, firebaseUid: string) {
 
   // Compatibilidade com corridas antigas sem destinatário.
   const result = await admin.from("orders").select(ORDER_SELECT).is("courier_id", null)
+    .in("status", ["AGUARDANDO_ENTREGADOR","BUSCANDO_ENTREGADOR","PRONTO","DESPACHADO"])
     .order("created_at", { ascending: true }).limit(100);
   if (result.error) throw new Error(`offer_lookup_failed: ${result.error.message}`);
   return (result.data || []).find((row: any) =>
