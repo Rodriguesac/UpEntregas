@@ -18,7 +18,9 @@ const MESSAGES={
  courier_has_pending_offer:"O motoboy já possui uma oferta pendente.",
  courier_identity_mismatch:"A conta do motoboy não corresponde à sessão atual.",
  mission_not_available:"Esta oferta não está mais disponível.",
- courier_offline:"O motoboy precisa ficar online."
+ courier_offline:"O motoboy precisa ficar online.",
+ cancel_reason_required:"Informe um motivo claro para cancelar a entrega.",
+ forbidden_cancel_source:"Cancelamento exige autorização do gestor."
 };
 const INVALID = new Set(["invalid_dispatch_request","courier_identity_mismatch"]);
 const NOT_FOUND = new Set(["courier_not_found","order_not_found"]);
@@ -36,7 +38,8 @@ export async function upAtomicDispatch(admin,params){
   p_courier_id:params.courierId,
   p_firebase_uid:params.firebaseUid||null,
   p_actor_id:params.actorId||null,
-  p_source:params.source||"UP_ENTREGAS"
+  p_source:params.source||"UP_ENTREGAS",
+  p_cancel_reason:params.reason||null
  };
  const result=await admin.rpc("up_atomic_dispatch",args);
  if(result.error){
