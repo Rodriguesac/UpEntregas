@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {UP,isActiveMission,nextStage,canPickup,canFinish,canRecordLocation,canExposeLocationToCustomer} from "./up-operations.mjs";
+import {UP,isActiveMission,nextStage,canPickup,canFinish,canRecordLocation,canExposeLocationToCustomer,canOfferToCourier} from "./up-operations.mjs";
 const order=(status="ACEITO",up_state=UP.TO_STORE,pickup=false)=>({id:"1",status,tracking_enabled:true,
   raw_payload:{up_state,...(pickup?{up_pickup_at:"2026-10-30T18:00:00Z"}:{})}});
 test("ciclo oficial: aceite, loja, retirada, cliente, conclusão",()=>{
@@ -50,4 +50,17 @@ test("localização de viagem à loja fica privada, e entrega finalizada não ac
     const o=order(status,UP.TO_CUSTOMER,true);
     assert.equal(canRecordLocation(o),false);
   }
+});
+
+test("oferta direcionada só aparece ao motoboy escolhido",()=>{
+ const o={id:"pedido1",courier_id:null,status:"AGUARDANDO_ENTREGADOR",
+   fulfillment_type:"ENTREGA",raw_payload:{up_target_courier_id:"moto-a"}};
+ assert.equal(canOfferToCourier(o,"moto-a","firebase-a"),true);
+ assert.equal(canOfferToCourier(o,"moto-b","firebase-b"),false);
+ o.raw_payload.up_rejected_by=["firebase-a"];
+ assert.equal(canOfferToCourier(o,"moto-a","firebase-a"),false);
+ delete o.raw_payload.up_target_courier_id;
+ assert.equal(canOfferToCourier(o,"moto-b","firebase-b"),true);
+ o.status="ENTREGUE";
+ assert.equal(canOfferToCourier(o,"moto-b","firebase-b"),false);
 });
