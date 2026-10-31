@@ -265,7 +265,9 @@ async function orderById(admin: any, id: string) {
 }
 
 async function currentOrder(admin: any, courierId: string) {
-  const result = await admin.from("orders").select(ORDER_SELECT).eq("courier_id", courierId).order("updated_at", { ascending: false }).limit(20);
+  const result = await admin.from("orders").select(ORDER_SELECT).eq("courier_id", courierId)
+    .not("status","in","(ENTREGUE,CONCLUIDO,CONCLUÍDO,FINALIZADO,CANCELADO,CANCELADA,CANCELED,CANCELLED,DELIVERED,COMPLETED,RETIRADO)")
+    .order("updated_at", { ascending: false }).limit(1);
   if (result.error) throw new Error(`current_order_failed: ${result.error.message}`);
   return (result.data || []).find((row: any) => !TERMINAL_STATUSES.has(text(row.status).toUpperCase())) || null;
 }
@@ -388,8 +390,13 @@ Deno.serve(async (req: Request) => {
 
     if (action === "presence") {
       const online = bool(body.online);
+      const active = await currentOrder(admin,courier.id);
       const metadata = { ...object(courier.metadata), app_version: text(body.app_version), last_presence_at: now };
-      const updated = await admin.from("couriers").update({ online, status: online ? "available" : "offline", metadata, updated_at: now }).eq("id", courier.id);
+      // Não liberar um motoboy como disponível por simples reconexão durante missão.
+      const busyStatus=active ? (text(courier.status).toLowerCase()==="available" ? "pickup" : courier.status) : null;
+      const updated = await admin.from("couriers").update({
+        online, status: busyStatus || (online ? "available" : "offline"), metadata, updated_at: now
+      }).eq("id", courier.id);
       if (updated.error) throw new Error(`presence_update_failed: ${updated.error.message}`);
       return json({ ok: true });
     }
@@ -449,6 +456,13 @@ Deno.serve(async (req: Request) => {
       if (row.courier_id && row.courier_id !== courier.id) return json({ error: "mission_taken", message: "Esta entrega já foi aceita por outro entregador." }, 409);
       if (row.courier_id === courier.id && text(row.raw_payload?.up_state) === "TO_STORE") return json({ok:true,already_accepted:true});
       if (!row.courier_id && !canOfferToCourier(row,courier.id,firebaseUid)) return json({ error: "mission_not_available", message: "Esta oferta não está disponível para você." }, 409);
+      const activeMission=await currentOrder(admin,courier.id);
+      if(activeMission && activeMission.id !== missionId) return json({
+        error:"courier_busy",message:"Conclua sua entrega atual antes de aceitar outra corrida."
+      },409);
+      if(!row.courier_id && courier.online!==true) return json({
+        error:"courier_offline",message:"Fique online antes de aceitar a oferta."
+      },409);
       const raw: Record<string, any> = { ...object(row.raw_payload), up_state: "TO_STORE", up_status: "ACEITA", up_delivery_status: "ENTREGADOR_A_CAMINHO_LOJA", up_driver_uid: firebaseUid, up_accepted_at: now, up_source: APP_SOURCE };
       delete raw.up_target_courier_id;
       let update = admin.from("orders").update({ courier_id: courier.id, raw_payload: raw, accepted_at: row.accepted_at || now, updated_at: now }).eq("id", missionId);
