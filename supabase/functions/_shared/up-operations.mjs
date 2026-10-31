@@ -40,6 +40,16 @@ export function parseGpsCoordinates(latValue,lngValue){
      (lat===0&&lng===0))return null;
   return {lat,lng};
 }
+/** Intervalo só vale para duas amostras da MESMA entrega. */
+export function shouldThrottleGpsSample(previousLocation,missionId,nowMs,minimumIntervalMs){
+  if(!missionId||!previousLocation||
+    String(previousLocation.order_id||"")!==String(missionId))return false;
+  const previousAt=Date.parse(String(previousLocation.updated_at||""));
+  return Number.isFinite(previousAt)&&previousAt>0&&
+    Number.isFinite(nowMs)&&Number.isFinite(minimumIntervalMs)&&
+    minimumIntervalMs>0&&nowMs>=previousAt&&
+    nowMs-previousAt<minimumIntervalMs;
+}
 export function canRecordLocation(order){
   return isActiveMission(order)&&[UP.TO_STORE,UP.AT_STORE,UP.TO_CUSTOMER,UP.AT_CUSTOMER].includes(normalize(order.raw_payload?.up_state));
 }
