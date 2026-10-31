@@ -14,8 +14,8 @@
   "message": {
     "token": "<FCM TOKEN PRIVADO>",
     "data": {
-      "rideId": "<UUID DO PEDIDO>",
-      "mission_id": "<UUID DO PEDIDO>",
+      "rideId": "supabase:<UUID DO PEDIDO>",
+      "mission_id": "supabase:<UUID DO PEDIDO>",
       "missionType": "rides",
       "targetDriverId": "<UID FIREBASE DO MOTOBOY>",
       "codigoPedido": "RAC-28",
@@ -31,6 +31,8 @@
 ```
 
 Nenhum endereço, telefone ou preço é enviado pelo FCM. O UP carrega dados da missão pela API autenticada.
+
+**Obrigatório:** `rideId`/`mission_id` precisam começar com `supabase:`. Esse prefixo é utilizado por `DriverRepository.loadRide` para encaminhar o toque na notificação à API do Supabase, e não ao documento antigo do Firestore. A API remove o prefixo ao consultar o pedido.
 
 ## Configuração ainda necessária antes da homologação real
 
