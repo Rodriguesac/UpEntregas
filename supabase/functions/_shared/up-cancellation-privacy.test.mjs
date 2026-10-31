@@ -28,7 +28,7 @@ test("telemetria, presença, retirada, conclusão e GPS não restauram metadata 
   assert.match(segment,/\.eq\("updated_at",courier\.updated_at\)/,action);
  }
  for(const name of ["courierStage","courierPickup","courierFinish","courierUpdate"]){
-  assert.match(src,new RegExp(name+"=await admin\\.from\\(\\\"couriers\\\"\\)\\.update\\("));
+  assert.match(src,new RegExp(name+"\\s*=\\s*await admin\\.from\\(\\\"couriers\\\"\\)\\.update\\("));
  }
  assert.ok((src.match(/\.eq\("updated_at",courier\.updated_at\)/g)||[]).length>=7);
  assert.match(src,/if \(!courierUpdate\.data\) return json\(\{error:"mission_changed"/);
