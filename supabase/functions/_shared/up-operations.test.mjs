@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {UP,isActiveMission,nextStage,canPickup,canFinish,canRecordLocation,canExposeLocationToCustomer,canOfferToCourier} from "./up-operations.mjs";
+import {UP,isActiveMission,nextStage,canPickup,canFinish,canRecordLocation,canExposeLocationToCustomer,canOfferToCourier,parseGpsCoordinates} from "./up-operations.mjs";
 const order=(status="ACEITO",up_state=UP.TO_STORE,pickup=false)=>({id:"1",status,tracking_enabled:true,
   raw_payload:{up_state,...(pickup?{up_pickup_at:"2026-10-30T18:00:00Z"}:{})}});
 test("ciclo oficial: aceite, loja, retirada, cliente, conclusão",()=>{
@@ -63,4 +63,16 @@ test("oferta direcionada só aparece ao motoboy escolhido",()=>{
  assert.equal(canOfferToCourier(o,"moto-b","firebase-b"),true);
  o.status="ENTREGUE";
  assert.equal(canOfferToCourier(o,"moto-b","firebase-b"),false);
+});
+
+test("coordenadas recebidas do app rejeitam campos ausentes e falsos zeros",()=>{
+ for(const [lat,lng] of [
+   [null,-54.6],[-20.4,undefined],["",-54.6],["   ",-54.6],
+   [0,0],["0","0"],[NaN,-54.6],[Infinity,-54.6],
+   [91,-54.6],[-20,-181]
+ ])assert.equal(parseGpsCoordinates(lat,lng),null,
+   `local inválido: ${String(lat)}, ${String(lng)}`);
+ assert.deepEqual(parseGpsCoordinates("-20.45","-54.62"),{lat:-20.45,lng:-54.62});
+ assert.deepEqual(parseGpsCoordinates(0,-54.62),{lat:0,lng:-54.62},
+   "latitude zero é válida quando a longitude não é zero");
 });
