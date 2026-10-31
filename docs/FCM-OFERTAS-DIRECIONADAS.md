@@ -61,3 +61,11 @@ Usar FCM como mecanismo de aviso, mantendo a consulta econômica à fila Supabas
 - A busca de missão ativa filtra estados terminais **no banco**, evitando a falha anterior de examinar só as últimas 20 corridas.
 - As correções estão apenas na branch de homologação e possuem testes de regressão.
 - **Limitação:** corridas absolutamente simultâneas ainda requerem teste de concorrência transacional antes da produção. Não aprovar múltiplas rotas sem o contrato correspondente.
+
+## Privacidade do rastreamento ao cancelar
+
+O banco preparado em `Rodriguesac/rodriguesacaiecia/rebuild/sql/up_atomic_dispatch.sql` cancela uma missão por transação ou coloca o pedido em análise após retirada/pagamento aprovado. Em ambas as opções desliga `orders.tracking_enabled`, limpa a localização de `raw_payload` e torna a localização recente privada.
+
+O `driver-api` da branch agora usa verificação de versão do registro de motoboy também em presença, telemetria, equipamentos e atualização de etapas, para reduzir o risco de uma chamada em atraso reativar o rastreamento de uma missão já interrompida. `UP-operations` não permite avançar etapas nem enviar GPS quando `up_state=CANCELLATION_REVIEW` ou `CANCELED`.
+
+O cancelamento pós-retirada não libera automaticamente o motoboy nem simula estorno. Ainda requer fluxo presencial/assistido e testes com aparelho real; não é versão operacional.
