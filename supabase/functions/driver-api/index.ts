@@ -397,22 +397,27 @@ Deno.serve(async (req: Request) => {
       const busyStatus=active ? (text(courier.status).toLowerCase()==="available" ? "pickup" : courier.status) : null;
       const updated = await admin.from("couriers").update({
         online, status: busyStatus || (online ? "available" : "offline"), metadata, updated_at: now
-      }).eq("id", courier.id);
+      }).eq("id", courier.id).eq("updated_at",courier.updated_at).select("id").maybeSingle();
       if (updated.error) throw new Error(`presence_update_failed: ${updated.error.message}`);
+      if (!updated.data) return json({error:"courier_changed",message:"Status atualizado em outro aparelho. Tente novamente."},409);
       return json({ ok: true });
     }
 
     if (action === "telemetry") {
       const metadata = { ...object(courier.metadata), battery_level: num(body.battery_level), charging: bool(body.charging), app_version: text(body.app_version), telemetry_at: now };
-      const updated = await admin.from("couriers").update({ metadata, updated_at: now }).eq("id", courier.id);
+      const updated = await admin.from("couriers").update({ metadata, updated_at: now })
+        .eq("id", courier.id).eq("updated_at",courier.updated_at).select("id").maybeSingle();
       if (updated.error) throw new Error(`telemetry_update_failed: ${updated.error.message}`);
+      if (!updated.data) return json({error:"courier_changed",message:"Telemetria desatualizada. Tente novamente."},409);
       return json({ ok: true });
     }
 
     if (action === "equipment") {
       const metadata = { ...object(courier.metadata), has_cash: bool(body.has_cash), cash_available: Math.max(0, num(body.cash_available)), has_machine: bool(body.has_machine), machine_types: text(body.machine_types), equipment_at: now };
-      const updated = await admin.from("couriers").update({ metadata, updated_at: now }).eq("id", courier.id);
+      const updated = await admin.from("couriers").update({ metadata, updated_at: now })
+        .eq("id", courier.id).eq("updated_at",courier.updated_at).select("id").maybeSingle();
       if (updated.error) throw new Error(`equipment_update_failed: ${updated.error.message}`);
+      if (!updated.data) return json({error:"courier_changed",message:"Cadastro atualizado em outro aparelho. Tente novamente."},409);
       return json({ ok: true });
     }
 
@@ -514,7 +519,9 @@ Deno.serve(async (req: Request) => {
       const saved = await admin.from("orders").update({ raw_payload: nextRaw, updated_at: now }).eq("id", missionId).eq("courier_id", courier.id).eq("updated_at",row.updated_at).select("id").maybeSingle();
       if (saved.error) throw new Error(`stage_failed: ${saved.error.message}`);
       if (!saved.data) return json({error:"mission_changed",message:"A entrega mudou em outro aparelho. Atualize."},409);
-      await admin.from("couriers").update({ status: state === "TO_CUSTOMER" ? "delivery" : state === "AT_CUSTOMER" ? "at_customer" : "pickup", tracking_enabled: true, metadata: { ...object(courier.metadata), current_order_id: missionId, up_state: state }, updated_at: now }).eq("id", courier.id);
+      const courierStage=await admin.from("couriers").update({ status: state === "TO_CUSTOMER" ? "delivery" : state === "AT_CUSTOMER" ? "at_customer" : "pickup", tracking_enabled: true, metadata: { ...object(courier.metadata), current_order_id: missionId, up_state: state }, updated_at: now }).eq("id", courier.id).eq("updated_at",courier.updated_at).select("id").maybeSingle();
+      if(courierStage.error)throw new Error(`courier_stage_failed: ${courierStage.error.message}`);
+      if(!courierStage.data)return json({error:"mission_changed",message:"Missão alterada. Atualize os dados."},409);
       await event(admin, missionId, deliveryStatus || status, firebaseUid, "Etapa atualizada pelo entregador.", { up_state: state });
       if (state === "TO_CUSTOMER" || state === "AT_CUSTOMER") {
         const latest = await orderById(admin, missionId);
@@ -533,7 +540,9 @@ Deno.serve(async (req: Request) => {
       const saved = await admin.from("orders").update({ status: "DESPACHADO", raw_payload: nextRaw, dispatched_at: now, updated_at: now }).eq("id", missionId).eq("courier_id", courier.id).eq("updated_at",row.updated_at).select("id").maybeSingle();
       if (saved.error) throw new Error(`pickup_failed: ${saved.error.message}`);
       if (!saved.data) return json({error:"mission_changed",message:"A retirada mudou em outro aparelho. Atualize."},409);
-      await admin.from("couriers").update({ status: "delivery", tracking_enabled: true, metadata: { ...object(courier.metadata), current_order_id: missionId, up_state: "TO_CUSTOMER" }, updated_at: now }).eq("id", courier.id);
+      const courierPickup=await admin.from("couriers").update({ status: "delivery", tracking_enabled: true, metadata: { ...object(courier.metadata), current_order_id: missionId, up_state: "TO_CUSTOMER" }, updated_at: now }).eq("id", courier.id).eq("updated_at",courier.updated_at).select("id").maybeSingle();
+      if(courierPickup.error)throw new Error(`courier_pickup_failed: ${courierPickup.error.message}`);
+      if(!courierPickup.data)return json({error:"mission_changed",message:"Missão alterada. Atualize os dados."},409);
       await event(admin, missionId, "SAIU_PARA_ENTREGA", firebaseUid, "Pedido retirado na loja.");
       const latest = await orderById(admin, missionId);
       if (latest) await sendCustomerPush(admin, latest, "SAIU_PARA_ENTREGA");
@@ -551,7 +560,9 @@ Deno.serve(async (req: Request) => {
       const saved = await admin.from("orders").update({ status: "ENTREGUE", payment_details: { ...object(row.payment_details), received_by_courier: received, received_at: now }, raw_payload: nextRaw, completed_at: now, updated_at: now }).eq("id", missionId).eq("courier_id", courier.id).eq("updated_at",row.updated_at).select("id").maybeSingle();
       if (saved.error) throw new Error(`finish_failed: ${saved.error.message}`);
       if (!saved.data) return json({error:"mission_changed",message:"A conclusão mudou em outro aparelho. Atualize."},409);
-      await admin.from("couriers").update({ status: courier.online ? "available" : "offline", tracking_enabled: false, metadata: { ...object(courier.metadata), current_order_id: null, up_state: "DELIVERED" }, updated_at: now }).eq("id", courier.id);
+      const courierFinish=await admin.from("couriers").update({ status: courier.online ? "available" : "offline", tracking_enabled: false, metadata: { ...object(courier.metadata), current_order_id: null, up_state: "DELIVERED" }, updated_at: now }).eq("id", courier.id).eq("updated_at",courier.updated_at).select("id").maybeSingle();
+      if(courierFinish.error)throw new Error(`courier_finish_failed: ${courierFinish.error.message}`);
+      if(!courierFinish.data)return json({error:"mission_changed",message:"Missão alterada. Atualize os dados."},409);
       await event(admin, missionId, "ENTREGUE", firebaseUid, "Entrega concluída no UP Entregas.", { received_amount: received });
       const latest = await orderById(admin, missionId);
       if (latest) await sendCustomerPush(admin, latest, "ENTREGUE");
