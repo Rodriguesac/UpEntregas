@@ -30,6 +30,16 @@ export function canFinish(order){
   return isActiveMission(order)&&normalize(order.raw_payload?.up_state)===UP.AT_CUSTOMER &&
     Boolean(order.raw_payload?.up_pickup_at);
 }
+/** Coordenadas recebidas do app: não transformar null/"" em 0 silenciosamente. */
+export function parseGpsCoordinates(latValue,lngValue){
+  if(latValue==null||lngValue==null||
+    String(latValue).trim()===""||String(lngValue).trim()==="")return null;
+  const lat=Number(latValue),lng=Number(lngValue);
+  if(!Number.isFinite(lat)||!Number.isFinite(lng)||
+     lat < -90||lat > 90||lng < -180||lng > 180||
+     (lat===0&&lng===0))return null;
+  return {lat,lng};
+}
 export function canRecordLocation(order){
   return isActiveMission(order)&&[UP.TO_STORE,UP.AT_STORE,UP.TO_CUSTOMER,UP.AT_CUSTOMER].includes(normalize(order.raw_payload?.up_state));
 }
