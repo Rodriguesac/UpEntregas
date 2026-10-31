@@ -22,3 +22,25 @@ test("aceite verifica destinatário, atualização concorrente e não aceita dua
   assert.match(source,/already_accepted:true/);
   assert.match(source,/update = update\.eq\("updated_at",row\.updated_at\)/);
 });
+
+test("motoboy já em missão não volta a disponível após reconectar",()=>{
+  const src=fs.readFileSync("supabase/functions/driver-api/index.ts","utf8");
+  const presence=src.slice(src.indexOf('if (action === "presence")'),src.indexOf('if (action === "telemetry")'));
+  assert.match(presence,/const active = await currentOrder\(admin,courier\.id\)/);
+  assert.match(presence,/const busyStatus=active \?/);
+  assert.doesNotMatch(presence,/status: online \? "available" : "offline"/);
+});
+test("aceite nega nova missão quando já está em outra entrega ativa",()=>{
+  const src=fs.readFileSync("supabase/functions/driver-api/index.ts","utf8");
+  const start=src.indexOf('if (action === "accept")');
+  const end=src.indexOf('if (action === "reject"',start);
+  assert.ok(start>=0&&end>start);
+  const accept=src.slice(start,end);
+  assert.match(accept,/activeMission=await currentOrder\(admin,courier\.id\)/);
+  assert.match(accept,/activeMission\.id !== missionId/);
+  assert.match(accept,/error:"courier_busy"/);
+  assert.match(accept,/error:"courier_offline"/);
+  const current=src.slice(src.indexOf("async function currentOrder("),src.indexOf("async function offeredOrder("));
+  assert.match(current,/\.not\("status","in"/);
+  assert.doesNotMatch(current,/\.limit\(20\)/);
+});
