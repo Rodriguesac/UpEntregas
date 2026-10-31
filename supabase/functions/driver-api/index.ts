@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.56.1";
-import {nextStage,canPickup,canFinish,canRecordLocation,canExposeLocationToCustomer,canOfferToCourier} from "../_shared/up-operations.mjs";
+import {nextStage,canPickup,canFinish,canRecordLocation,canExposeLocationToCustomer,canOfferToCourier,parseGpsCoordinates} from "../_shared/up-operations.mjs";
 import {upAtomicDispatch} from "../_shared/up-atomic-dispatch.mjs";
 import { createRemoteJWKSet, jwtVerify } from "npm:jose@5.9.6";
 
@@ -571,8 +571,9 @@ Deno.serve(async (req: Request) => {
 
     if (action === "location") {
       if (!canRecordLocation(row)) return json({error:"tracking_not_active",message:"Sem missão ativa para registrar localização."},409);
-      const lat = num(body.lat), lng = num(body.lng);
-      if (Math.abs(lat) > 90 || Math.abs(lng) > 180 || (lat === 0 && lng === 0)) return json({ error: "invalid_location", message: "Localização inválida." }, 400);
+      const coordinates = parseGpsCoordinates(body.lat, body.lng);
+      if (!coordinates) return json({ error: "invalid_location", message: "Localização inválida." }, 400);
+      const {lat,lng} = coordinates;
 
       const config = trackingConfig(courier);
       const metadata = object(courier.metadata);
@@ -585,6 +586,7 @@ Deno.serve(async (req: Request) => {
 
       const visibleToCustomer = canExposeLocationToCustomer(row, bool(body.visible_to_customer));
       const location = {
+        order_id: missionId,
         lat,
         lng,
         accuracy: num(body.accuracy),
