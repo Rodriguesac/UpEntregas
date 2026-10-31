@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.56.1";
 import {nextStage,canPickup,canFinish,canRecordLocation,canExposeLocationToCustomer,canOfferToCourier} from "../_shared/up-operations.mjs";
+import {upAtomicDispatch} from "../_shared/up-atomic-dispatch.mjs";
 import { createRemoteJWKSet, jwtVerify } from "npm:jose@5.9.6";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
@@ -463,17 +464,20 @@ Deno.serve(async (req: Request) => {
       if(!row.courier_id && courier.online!==true) return json({
         error:"courier_offline",message:"Fique online antes de aceitar a oferta."
       },409);
-      const raw: Record<string, any> = { ...object(row.raw_payload), up_state: "TO_STORE", up_status: "ACEITA", up_delivery_status: "ENTREGADOR_A_CAMINHO_LOJA", up_driver_uid: firebaseUid, up_accepted_at: now, up_source: APP_SOURCE };
-      delete raw.up_target_courier_id;
-      let update = admin.from("orders").update({ courier_id: courier.id, raw_payload: raw, accepted_at: row.accepted_at || now, updated_at: now }).eq("id", missionId);
-      if (!row.courier_id) update = update.is("courier_id", null);
-      update = update.eq("updated_at",row.updated_at);
-      const saved = await update.select("id");
-      if (saved.error) throw new Error(`accept_failed: ${saved.error.message}`);
-      if (!saved.data?.length) return json({ error: "mission_taken", message: "Esta entrega acabou de ser aceita por outro entregador." }, 409);
-      await admin.from("couriers").update({ status: "pickup", online: true, metadata: { ...object(courier.metadata), current_order_id: missionId, up_state: "TO_STORE" }, updated_at: now }).eq("id", courier.id);
-      await event(admin, missionId, "ENTREGADOR_ACEITOU", firebaseUid, "Entrega aceita no UP Entregas.");
-      return json({ ok: true });
+      try{
+        // A RPC revalida Firebase UID, oferta, status e outra missão dentro
+        // do lock SQL. Não existe caminho alternativo que atribua courier_id.
+        const committed=await upAtomicDispatch(admin,{
+          action:"accept",orderId:missionId,courierId:courier.id,
+          firebaseUid,actorId:firebaseUid,source:"UP_ENTREGAS"
+        });
+        return json({ok:true,already_accepted:committed.already_accepted===true});
+      }catch(error:any){
+        return json({error:error.code||"rpc_unavailable",
+          message:error.message||"Não foi possível confirmar o aceite."},
+          error.status||503);
+      }
+
     }
 
     if (action === "reject" || action === "expire") {
