@@ -84,7 +84,7 @@ public class PermissionCenterActivity extends AppCompatActivity {
                 "Permitir em segundo plano", v -> requestBatteryExemption());
 
         permissionCard("Configurações do aplicativo", true,
-                "Configurações extras de bateria e execução em segundo plano."
+                "Configurações extras de bateria e execução em segundo plano.",
                 "Abrir configurações do app", v -> openAppSettings());
 
         Button test = Ui.greenButton(this, "Testar notificação de corrida");
