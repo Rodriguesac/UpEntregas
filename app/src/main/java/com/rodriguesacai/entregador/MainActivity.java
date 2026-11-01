@@ -2153,7 +2153,7 @@ public class MainActivity extends AppCompatActivity {
             details.addView(Ui.moneyRow(this, "A receber da loja", formatMoney(toReceive), R.color.up_text));
             root.addView(details, Math.max(0, root.getChildCount() - 1));
 
-            LinearLayout history = Ui.menuRow(this, "$", "Ver histórico", "Corridas e valores anteriores");
+            LinearLayout history = Ui.menuRow(this, "◷", "Ver histórico", "Corridas e valores anteriores");
             history.setOnClickListener(v -> { currentTab = 1; render(); });
             root.addView(history, Math.max(0, root.getChildCount() - 1));
         }).addOnFailureListener(e -> {
@@ -2193,23 +2193,23 @@ public class MainActivity extends AppCompatActivity {
 
         root.addView(Ui.sectionTitle(this, "Sua conta"));
 
-        LinearLayout account = Ui.menuRow(this, "●", "Minha conta e veículo", "Dados pessoais e veículo");
+        LinearLayout account = Ui.menuRow(this, "◉", "Minha conta e veículo", "Cadastro, documentos e veículo");
         account.setOnClickListener(v -> { deepReturnTab = 3; currentTab = 5; render(); });
         root.addView(account);
 
-        LinearLayout pix = Ui.menuRow(this, "$", "Pix e pagamentos", "Recebimentos e chave Pix");
+        LinearLayout pix = Ui.menuRow(this, "◇", "Pix e pagamentos", "Recebimentos e chave Pix");
         pix.setOnClickListener(v -> { deepReturnTab = 3; currentTab = 6; render(); });
         root.addView(pix);
 
-        LinearLayout operation = Ui.menuRow(this, "↔", "Operação", "Troco, maquininha e disponibilidade");
+        LinearLayout operation = Ui.menuRow(this, "⚙", "Operação", "Troco, maquininha e disponibilidade");
         operation.setOnClickListener(v -> { deepReturnTab = 3; currentTab = 7; render(); });
         root.addView(operation);
 
-        LinearLayout notifications = Ui.menuRow(this, "•", "Notificações", "Avisos e novas corridas");
+        LinearLayout notifications = Ui.menuRow(this, "✦", "Notificações", "Alertas de corridas e atualizações");
         notifications.setOnClickListener(v -> { deepReturnTab = 3; currentTab = 4; render(); });
         root.addView(notifications);
 
-        LinearLayout permissionsRow = Ui.menuRow(this, "+", "Permissões e bateria", "Só mexa aqui se o app pedir");
+        LinearLayout permissionsRow = Ui.menuRow(this, "◎", "Permissões e bateria", "Localização, notificações e segundo plano");
         permissionsRow.setOnClickListener(v -> startActivity(new Intent(this, PermissionCenterActivity.class)));
         root.addView(permissionsRow);
 
@@ -2229,7 +2229,7 @@ public class MainActivity extends AppCompatActivity {
         about.addView(brand);
         root.addView(about);
 
-        LinearLayout logoutRow = Ui.menuRow(this, "↪", "Sair da conta", "");
+        LinearLayout logoutRow = Ui.menuRow(this, "↪", "Sair da conta", "Encerrar esta sessão com segurança");
         TextView logoutTitle = (TextView) logoutRow.getTag();
         if (logoutTitle != null) logoutTitle.setTextColor(Ui.color(this, R.color.up_danger));
         logoutRow.setOnClickListener(v -> logout());
