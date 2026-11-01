@@ -337,25 +337,29 @@ public class MainActivity extends AppCompatActivity {
         boolean hasRide = ride != null && ride.exists();
         boolean offer = hasRide && Boolean.TRUE.equals(ride.getBoolean("ofertaAtiva"));
 
+        // A disponibilidade é a única ação principal da home.
         LinearLayout availability = Ui.accentGradientCard(this);
+        TextView kicker = Ui.text(this, "SUA DISPONIBILIDADE", 11, true);
+        kicker.setTextColor(0xFFDBE8FF);
+        kicker.setLetterSpacing(.11f);
+        availability.addView(kicker);
+        availability.addView(Ui.space(this, 10));
+
         LinearLayout top = Ui.row(this);
-        LinearLayout texts = new LinearLayout(this);
-        texts.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout titles = new LinearLayout(this);
+        titles.setOrientation(LinearLayout.VERTICAL);
         TextView onlineTitle = Ui.text(this,
-                hasRide ? (offer ? "Nova entrega" : "Entrega em andamento") : (online ? "Online" : "Offline"),
-                24, true);
-        onlineTitle.setTextColor(Ui.color(this,
-                hasRide ? R.color.up_purple : (online ? R.color.up_success : R.color.up_text)));
-        texts.addView(onlineTitle);
-        texts.addView(Ui.muted(this,
-                hasRide ? "Sua próxima ação está na tela de Corridas." :
-                        (online ? "Pronto para receber entregas." : "Ative quando estiver disponível."), 13));
-        top.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+                hasRide ? (offer ? "Nova entrega" : "Entrega em andamento") : (online ? "Você está online" : "Você está offline"),
+                23, true);
+        onlineTitle.setTextColor(0xFFFFFFFF);
+        titles.addView(onlineTitle);
+        top.addView(titles, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
         SwitchMaterial sw = new SwitchMaterial(this);
         sw.setChecked(online);
         sw.setEnabled(!hasRide);
         sw.setShowText(false);
+        sw.setContentDescription(online ? "Desativar disponibilidade para novas corridas" : "Ativar disponibilidade para novas corridas");
         sw.setOnCheckedChangeListener((b, v) -> {
             if (hasRide) return;
             if (v && !hasInternet()) {
@@ -369,56 +373,80 @@ public class MainActivity extends AppCompatActivity {
                 startActivity(new Intent(this, PermissionCenterActivity.class));
                 return;
             }
+            sw.setEnabled(false);
             repo.setOnline(driverId, v).addOnSuccessListener(x -> {
                 online = v;
                 if (v) OnlineService.start(this); else OnlineService.stop(this);
                 listenOffers();
                 render();
             }).addOnFailureListener(e -> {
+                sw.setEnabled(true);
                 sw.setChecked(!v);
                 toast(e.getMessage());
             });
         });
         top.addView(sw);
         availability.addView(top);
+
+        TextView summary = Ui.text(this,
+                hasRide ? "Seu atendimento já está em andamento. Abra a entrega para continuar." :
+                        (online ? "Você está disponível para novas entregas. Avisaremos assim que chegar uma oferta."
+                                : "Ative a disponibilidade quando estiver pronto para receber novas corridas."),
+                13, false);
+        summary.setTextColor(0xFFE2ECFF);
+        summary.setPadding(0, Ui.dp(this, 9), 0, Ui.dp(this, 12));
+        availability.addView(summary);
+
+        TextView statePill = Ui.pill(this, hasRide ? (offer ? "● OFERTA AGUARDANDO RESPOSTA" : "● ENTREGA ATIVA")
+                : online ? "● DISPONÍVEL PARA CORRIDAS" : "● RECEBIMENTO PAUSADO",
+                hasRide || online ? R.color.up_green : R.color.up_yellow);
+        LinearLayout.LayoutParams pillParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        pillParams.setMargins(0, Ui.dp(this, 2), 0, 0);
+        availability.addView(statePill, pillParams);
         root.addView(availability);
 
         if (!hasCorePermissions()) {
-            LinearLayout permission = Ui.noticeCard(this, "Finalize a configuração",
-                    "Libere notificações e localização para receber corridas com segurança.", R.color.up_warning);
-            Button configure = Ui.secondaryButton(this, "Configurar aparelho");
+            LinearLayout permission = Ui.noticeCard(this, "Configure o aparelho",
+                    "Ative notificações e localização para não perder ofertas durante o trabalho.", R.color.up_warning);
+            Button configure = Ui.secondaryButton(this, "Configurar permissões");
             configure.setOnClickListener(v -> startActivity(new Intent(this, PermissionCenterActivity.class)));
             permission.addView(configure);
             root.addView(permission);
         }
 
+        root.addView(Ui.sectionTitle(this, "Resumo de hoje"));
         LinearLayout stats = Ui.summaryStrip(this);
         TextView gainsValue = Ui.text(this, "R$ —", 17, true);
         gainsValue.setTextColor(Ui.color(this, R.color.up_success));
         TextView ridesValue = Ui.text(this, "—", 17, true);
-        TextView statusValue = Ui.text(this, online ? "Ativo" : "Pausado", 16, true);
+        TextView statusValue = Ui.text(this, online ? "Ativo" : "Pausado", 15, true);
         statusValue.setTextColor(Ui.color(this, online ? R.color.up_success : R.color.up_text_muted));
-        stats.addView(Ui.summaryItem(this, "Hoje", gainsValue), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        stats.addView(Ui.summaryItem(this, "Entregas", ridesValue), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        stats.addView(Ui.summaryItem(this, "Online", statusValue), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        stats.addView(Ui.summaryItem(this, "Ganhos", gainsValue), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        stats.addView(Ui.summaryItem(this, "Corridas", ridesValue), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        stats.addView(Ui.summaryItem(this, "Status", statusValue), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         root.addView(stats);
         loadTodaySummary(gainsValue, ridesValue);
 
+        root.addView(Ui.sectionTitle(this, "Próxima ação"));
         LinearLayout next = Ui.card(this);
         if (hasRide) {
-            next.addView(Ui.eyebrow(this, offer ? "Ação necessária" : "Entrega atual"));
+            next.addView(Ui.eyebrow(this, offer ? "Responder à oferta" : "Continuar entrega"));
             String pedido = pick("codigoPedido", "numeroPedido", "orderId", "pedidoId");
-            next.addView(Ui.text(this, offer ? "Você recebeu uma nova entrega" : "Pedido #" + labelOrDash(pedido), 21, true));
-            next.addView(Ui.muted(this, offer ? "Confira a corrida e responda à oferta." : "Continue de onde parou.", 13));
-            Button open = Ui.button(this, offer ? "Ver nova entrega" : "Abrir entrega");
+            next.addView(Ui.text(this, offer ? "Uma nova corrida espera por você" : "Pedido #" + labelOrDash(pedido), 20, true));
+            next.addView(Ui.muted(this, offer ? "Confira a distância, o pagamento e aceite somente se puder atender." : "Todas as etapas da missão estão na mesma tela.", 13));
+            Button open = Ui.button(this, offer ? "Analisar oferta" : "Continuar entrega");
             open.setOnClickListener(v -> { currentTab = 1; render(); });
             next.addView(open);
         } else {
-            next.addView(Ui.eyebrow(this, online ? "Pronto" : "Pausado"));
-            next.addView(Ui.text(this, online ? "Aguardando próxima entrega" : "Você está fora de operação", 21, true));
-            next.addView(Ui.muted(this,
-                    online ? "Assim que houver uma corrida para você, o UP Entregas vai avisar." :
-                            "Fique online quando quiser voltar a receber entregas.", 13));
+            next.addView(Ui.eyebrow(this, online ? "Aguardando ofertas" : "Sem corridas ativas"));
+            next.addView(Ui.text(this, online ? "Tudo pronto para a próxima entrega" : "Seu turno está pausado", 20, true));
+            next.addView(Ui.muted(this, online
+                    ? "Assim que a loja enviar uma corrida, os detalhes aparecerão aqui e em Corridas."
+                    : "Você pode consultar o histórico e os ganhos. Ative o botão acima para receber pedidos.", 13));
+            Button view = Ui.secondaryButton(this, "Ver corridas e histórico");
+            view.setOnClickListener(v -> { currentTab = 1; render(); });
+            next.addView(view);
         }
         root.addView(next);
     }
@@ -1996,7 +2024,11 @@ public class MainActivity extends AppCompatActivity {
             t.setPadding(Ui.dp(this, 12), 0, 0, 0);
             header.addView(t, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         } else {
-            header.addView(Ui.text(this, title, 24, true), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            LinearLayout heading = new LinearLayout(this);
+            heading.setOrientation(LinearLayout.VERTICAL);
+            heading.addView(Ui.eyebrow(this, "UP ENTREGAS"));
+            heading.addView(Ui.text(this, title, 24, true));
+            header.addView(heading, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         }
         root.addView(header);
     }
@@ -2008,10 +2040,11 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         LinearLayout empty = Ui.card(this);
-        empty.addView(Ui.eyebrow(this, online ? "Disponível" : "Sem corrida"));
-        empty.addView(Ui.text(this, "Nenhuma entrega ativa", 21, true));
+        empty.addView(Ui.eyebrow(this, online ? "Sua fila está livre" : "Recebimento pausado"));
+        empty.addView(Ui.space(this, 4));
+        empty.addView(Ui.text(this, "Nenhuma entrega em andamento", 20, true));
         empty.addView(Ui.muted(this,
-                online ? "Quando uma corrida for enviada para você, ela aparecerá aqui." : "Fique online para receber novas entregas.", 13));
+                online ? "Você está disponível. A próxima oferta aparecerá aqui com os detalhes para aceitar ou recusar." : "Ative o modo online na página Início para receber ofertas da loja.", 13));
         root.addView(empty);
 
         root.addView(Ui.space(this, 8));
@@ -2100,11 +2133,16 @@ public class MainActivity extends AppCompatActivity {
             }
 
             LinearLayout hero = Ui.accentGradientCard(this);
-            hero.addView(Ui.muted(this, "Ganhos hoje", 12));
+            TextView gainsLabel = Ui.text(this, "GANHOS DE HOJE", 11, true);
+            gainsLabel.setLetterSpacing(.09f);
+            gainsLabel.setTextColor(0xFFE2ECFF);
+            hero.addView(gainsLabel);
             TextView total = Ui.text(this, formatMoney(today), 31, true);
             total.setTextColor(0xFFFFFFFF);
             hero.addView(total);
-            hero.addView(Ui.muted(this, countToday + (countToday == 1 ? " corrida" : " corridas"), 12));
+            TextView earningsCount = Ui.text(this, countToday + (countToday == 1 ? " corrida concluída" : " corridas no período"), 13, false);
+            earningsCount.setTextColor(0xFFE2ECFF);
+            hero.addView(earningsCount);
             root.addView(hero, Math.max(0, root.getChildCount() - 1));
 
             LinearLayout details = Ui.card(this);
@@ -2128,6 +2166,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void showAccountPage() {
+        root.addView(Ui.muted(this, "Seu cadastro, preferências e informações de trabalho em um só lugar.", 13));
         LinearLayout profile = Ui.card(this);
         LinearLayout row = Ui.row(this);
         TextView avatar = Ui.centered(this, initials(driverName), 18, true);
