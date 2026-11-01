@@ -1,21 +1,22 @@
 <resources>
-    <color name="up_purple">#4E79FF</color>
-    <color name="up_purple_soft">#122856</color>
-    <color name="up_purple_dark">#0A2B78</color>
-    <color name="up_yellow">#FFD23F</color>
-    <color name="up_yellow_dark">#E2A800</color>
-    <color name="up_green">#43E18A</color>
-    <color name="up_green_dark">#26B96A</color>
-    <color name="up_bg">#07111F</color>
-    <color name="up_surface">#0D1929</color>
-    <color name="up_surface_alt">#132238</color>
-    <color name="up_text">#F7FAFF</color>
-    <color name="up_text_muted">#98A8BF</color>
-    <color name="up_border">#243A56</color>
-    <color name="up_success">#43E18A</color>
-    <color name="up_warning">#FFD23F</color>
-    <color name="up_danger">#FF665C</color>
-    <color name="up_info">#6EA0FF</color>
+    <!-- UP Entregas · tema noturno com contraste confortável -->
+    <color name="up_purple">#7EA4FF</color>
+    <color name="up_purple_soft">#18315B</color>
+    <color name="up_purple_dark">#0D2B6C</color>
+    <color name="up_yellow">#FFCF5A</color>
+    <color name="up_yellow_dark">#E6AB30</color>
+    <color name="up_green">#48DDA9</color>
+    <color name="up_green_dark">#29BF8B</color>
+    <color name="up_bg">#0B1525</color>
+    <color name="up_surface">#152237</color>
+    <color name="up_surface_alt">#1E2D44</color>
+    <color name="up_text">#F4F8FF</color>
+    <color name="up_text_muted">#A5B6CF</color>
+    <color name="up_border">#32445F</color>
+    <color name="up_success">#43D49E</color>
+    <color name="up_warning">#FFD064</color>
+    <color name="up_danger">#FF8892</color>
+    <color name="up_info">#89B0FF</color>
     <color name="white">#FFFFFF</color>
-    <color name="black">#000000</color>
+    <color name="black">#081426</color>
 </resources>
