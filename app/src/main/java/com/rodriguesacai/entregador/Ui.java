@@ -106,7 +106,7 @@ public final class Ui {
         b.setText(s);
         b.setAllCaps(false);
         b.setTextSize(16);
-        b.setTextColor(0xFFFFFFFF);
+        b.setTextColor(ThemePrefs.isDark(c) ? color(c, R.color.black) : 0xFFFFFFFF);
         b.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         b.setGravity(Gravity.CENTER);
         b.setMinHeight(dp(c, 56));
@@ -398,6 +398,7 @@ public final class Ui {
         item.setOrientation(LinearLayout.VERTICAL);
         item.setGravity(Gravity.CENTER);
         item.setPadding(dp(c, 6), dp(c, 9), dp(c, 6), dp(c, 7));
+        item.setContentDescription(label + (active ? ", selecionado" : ""));
         if (active) item.setBackground(rounded(c, R.color.up_purple_soft, 17, R.color.up_purple_soft, 0));
 
         ImageView icon = new ImageView(c);
@@ -611,7 +612,7 @@ public final class Ui {
         b.setInsetBottom(0);
         b.setCornerRadius(dp(c, 16));
         b.setElevation(0);
-        b.setTextColor(color(c, selected ? R.color.white : R.color.up_text));
+        b.setTextColor(color(c, selected ? (ThemePrefs.isDark(c) ? R.color.black : R.color.white) : R.color.up_text));
         b.setBackgroundTintList(ColorStateList.valueOf(color(c, selected ? R.color.up_purple : R.color.up_surface_alt)));
         b.setStrokeColor(ColorStateList.valueOf(color(c, selected ? R.color.up_purple : R.color.up_border)));
         b.setStrokeWidth(dp(c, 1));
