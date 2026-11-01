@@ -14,7 +14,9 @@ public final class ThemePrefs {
     public static void applySavedTheme(Context c) {
         android.content.SharedPreferences p = c.getSharedPreferences(PREF, Context.MODE_PRIVATE);
         if (!p.getBoolean(KEY_V14_LIGHT_MIGRATED, false)) {
-            p.edit().putBoolean(KEY_DARK, true).putBoolean(KEY_V14_LIGHT_MIGRATED, true).apply();
+            android.content.SharedPreferences.Editor editor = p.edit();
+            if (!p.contains(KEY_DARK)) editor.putBoolean(KEY_DARK, false);
+            editor.putBoolean(KEY_V14_LIGHT_MIGRATED, true).apply();
         }
         boolean dark = p.getBoolean(KEY_DARK, false);
         AppCompatDelegate.setDefaultNightMode(dark ? AppCompatDelegate.MODE_NIGHT_YES : AppCompatDelegate.MODE_NIGHT_NO);
