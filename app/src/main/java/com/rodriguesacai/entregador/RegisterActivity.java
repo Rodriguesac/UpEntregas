@@ -166,8 +166,8 @@ public class RegisterActivity extends AppCompatActivity {
         LinearLayout titles = new LinearLayout(this);
         titles.setOrientation(LinearLayout.VERTICAL);
         titles.setPadding(Ui.dp(this, 12), 0, Ui.dp(this, 8), 0);
-        titles.addView(Ui.text(this, editingExisting ? "Atualizar cadastro" : "Criar conta", 22, true));
-        titles.addView(Ui.muted(this, "Etapa " + step + " de 6", 12));
+        titles.addView(Ui.text(this, editingExisting ? "Atualizar perfil" : "Seja parceiro UP", 22, true));
+        titles.addView(Ui.muted(this, "Cadastro seguro • etapa " + step + " de 6", 12));
         top.addView(titles, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         top.addView(Ui.upMark(this, 48));
         root.addView(top);
@@ -185,11 +185,12 @@ public class RegisterActivity extends AppCompatActivity {
 
     private void pageTitle(String eyebrow, String title, String description) {
         root.addView(Ui.eyebrow(this, eyebrow));
-        root.addView(Ui.text(this, title, 29, true));
+        root.addView(Ui.space(this, 5));
+        root.addView(Ui.text(this, title, 26, true));
         TextView desc = Ui.muted(this, description, 14);
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        p.setMargins(0, Ui.dp(this, 7), 0, Ui.dp(this, 10));
+        p.setMargins(0, Ui.dp(this, 8), 0, Ui.dp(this, 14));
         desc.setLayoutParams(p);
         root.addView(desc);
     }

@@ -15,8 +15,8 @@ android {
         applicationId 'com.rodriguesacai.entregador'
         minSdk 26
         targetSdk 35
-        versionCode 280
-        versionName '2.8.0-rastreamento-economico'
+        versionCode 281
+        versionName '2.8.1-premium-mobile'
     }
 
     buildTypes {

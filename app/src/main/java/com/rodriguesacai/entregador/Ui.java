@@ -36,7 +36,7 @@ public final class Ui {
         v.setText(s == null ? "" : s);
         v.setTextColor(color(c, R.color.up_text));
         v.setTextSize(sp);
-        v.setLineSpacing(dp(c, 2), 1.03f);
+        v.setLineSpacing(dp(c, 2), 1.07f);
         v.setIncludeFontPadding(false);
         if (bold) v.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         else v.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
@@ -50,14 +50,14 @@ public final class Ui {
     }
 
     public static TextView eyebrow(Context c, String s) {
-        TextView v = text(c, s == null ? "" : s.toUpperCase(), 10, true);
+        TextView v = text(c, s == null ? "" : s.toUpperCase(), 11, true);
         v.setTextColor(color(c, R.color.up_purple));
-        v.setLetterSpacing(.09f);
+        v.setLetterSpacing(.075f);
         return v;
     }
 
     public static TextView sectionTitle(Context c, String title) {
-        TextView t = text(c, title, 18, true);
+        TextView t = text(c, title, 19, true);
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         p.setMargins(0, dp(c, 10), 0, dp(c, 4));
         t.setLayoutParams(p);
@@ -105,14 +105,14 @@ public final class Ui {
         MaterialButton b = new MaterialButton(c);
         b.setText(s);
         b.setAllCaps(false);
-        b.setTextSize(15);
-        b.setTextColor(0xFFFFFFFF);
+        b.setTextSize(16);
+        b.setTextColor(ThemePrefs.isDark(c) ? color(c, R.color.black) : 0xFFFFFFFF);
         b.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         b.setGravity(Gravity.CENTER);
         b.setMinHeight(dp(c, 56));
         b.setPadding(dp(c, 18), dp(c, 12), dp(c, 18), dp(c, 12));
         b.setBackgroundTintList(ColorStateList.valueOf(color(c, R.color.up_purple)));
-        b.setCornerRadius(dp(c, 18));
+        b.setCornerRadius(dp(c, 16));
         b.setInsetTop(0);
         b.setInsetBottom(0);
         b.setElevation(0);
@@ -199,7 +199,7 @@ public final class Ui {
         LinearLayout l = new LinearLayout(c);
         l.setOrientation(LinearLayout.VERTICAL);
         l.setPadding(dp(c, 18), dp(c, 18), dp(c, 18), dp(c, 18));
-        l.setBackground(rounded(c, R.color.up_surface, 22, R.color.up_border, 1));
+        l.setBackground(rounded(c, R.color.up_surface, 20, R.color.up_border, 1));
         l.setElevation(dp(c, 1));
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         p.setMargins(0, dp(c, 7), 0, dp(c, 7));
@@ -258,7 +258,7 @@ public final class Ui {
         LinearLayout l = new LinearLayout(c);
         l.setOrientation(LinearLayout.VERTICAL);
         l.setPadding(dp(c, 14), dp(c, 13), dp(c, 14), dp(c, 13));
-        l.setBackground(rounded(c, R.color.up_surface_alt, 16, R.color.up_border, 1));
+        l.setBackground(rounded(c, R.color.up_surface_alt, 18, R.color.up_border, 1));
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         p.setMargins(0, dp(c, 5), 0, dp(c, 5));
         l.setLayoutParams(p);
@@ -349,7 +349,7 @@ public final class Ui {
         l.setGravity(Gravity.CENTER);
         l.setPadding(dp(c, 8), dp(c, 12), dp(c, 8), dp(c, 12));
         l.setBackground(rounded(c, R.color.up_surface, 16, R.color.up_border, 1));
-        TextView lab = muted(c, label, 10);
+        TextView lab = muted(c, label, 11);
         lab.setGravity(Gravity.CENTER);
         l.addView(lab);
         value.setGravity(Gravity.CENTER);
@@ -383,9 +383,13 @@ public final class Ui {
         LinearLayout bar = new LinearLayout(c);
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setGravity(Gravity.CENTER);
-        bar.setPadding(dp(c, 8), dp(c, 7), dp(c, 8), dp(c, 8));
-        bar.setBackgroundColor(color(c, R.color.up_surface));
-        bar.setElevation(dp(c, 14));
+        bar.setPadding(dp(c, 9), dp(c, 8), dp(c, 9), dp(c, 12));
+        GradientDrawable surface = new GradientDrawable();
+        surface.setColor(color(c, R.color.up_surface));
+        surface.setCornerRadii(new float[]{dp(c, 22),dp(c, 22),dp(c, 22),dp(c, 22),0,0,0,0});
+        surface.setStroke(dp(c, 1), color(c, R.color.up_border));
+        bar.setBackground(surface);
+        bar.setElevation(dp(c, 10));
         return bar;
     }
 
@@ -393,16 +397,17 @@ public final class Ui {
         LinearLayout item = new LinearLayout(c);
         item.setOrientation(LinearLayout.VERTICAL);
         item.setGravity(Gravity.CENTER);
-        item.setPadding(dp(c, 6), dp(c, 5), dp(c, 6), dp(c, 5));
-        if (active) item.setBackground(rounded(c, R.color.up_purple_soft, 14, R.color.up_purple_soft, 0));
+        item.setPadding(dp(c, 6), dp(c, 9), dp(c, 6), dp(c, 7));
+        item.setContentDescription(label + (active ? ", selecionado" : ""));
+        if (active) item.setBackground(rounded(c, R.color.up_purple_soft, 17, R.color.up_purple_soft, 0));
 
         ImageView icon = new ImageView(c);
         icon.setImageResource(drawableRes);
         icon.setColorFilter(color(c, active ? R.color.up_purple : R.color.up_text_muted));
         icon.setContentDescription(label);
-        item.addView(icon, new LinearLayout.LayoutParams(dp(c, 22), dp(c, 22)));
+        item.addView(icon, new LinearLayout.LayoutParams(dp(c, 23), dp(c, 23)));
 
-        TextView text = centered(c, label, 10, true);
+        TextView text = centered(c, label, 11, true);
         text.setTextColor(color(c, active ? R.color.up_purple : R.color.up_text_muted));
         LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         tp.setMargins(0, dp(c, 2), 0, 0);
@@ -425,10 +430,10 @@ public final class Ui {
         l.setPadding(dp(c, 19), dp(c, 20), dp(c, 19), dp(c, 20));
         GradientDrawable g = new GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
-                new int[]{color(c, R.color.up_purple_dark), color(c, R.color.up_purple)});
-        g.setCornerRadius(dp(c, 24));
+                new int[]{0xFF12388B, 0xFF2867E9});
+        g.setCornerRadius(dp(c, 26));
         l.setBackground(g);
-        l.setElevation(dp(c, 2));
+        l.setElevation(dp(c, 1));
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         p.setMargins(0, dp(c, 7), 0, dp(c, 10));
         l.setLayoutParams(p);
@@ -437,8 +442,8 @@ public final class Ui {
 
     public static LinearLayout summaryStrip(Context c) {
         LinearLayout l = row(c);
-        l.setPadding(dp(c, 5), dp(c, 7), dp(c, 5), dp(c, 7));
-        l.setBackground(rounded(c, R.color.up_surface, 18, R.color.up_border, 1));
+        l.setPadding(dp(c, 7), dp(c, 9), dp(c, 7), dp(c, 9));
+        l.setBackground(rounded(c, R.color.up_surface, 20, R.color.up_border, 1));
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         p.setMargins(0, dp(c, 5), 0, dp(c, 10));
         l.setLayoutParams(p);
@@ -514,24 +519,26 @@ public final class Ui {
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(Gravity.CENTER_VERTICAL);
         card.setPadding(dp(c, 14), dp(c, 13), dp(c, 14), dp(c, 13));
-        card.setBackground(rounded(c, R.color.up_surface, 17, R.color.up_border, 1));
+        card.setBackground(rounded(c, R.color.up_surface, 20, R.color.up_border, 1));
         LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         cp.setMargins(0, dp(c, 5), 0, dp(c, 5));
         card.setLayoutParams(cp);
 
         TextView icon = centered(c, iconText, 14, true);
         icon.setTextColor(color(c, R.color.up_purple));
-        icon.setMinWidth(dp(c, 36));
+        icon.setMinWidth(dp(c, 40));
+        icon.setMinHeight(dp(c, 40));
+        icon.setBackground(rounded(c, R.color.up_purple_soft, 13, R.color.up_purple_soft, 0));
         card.addView(icon);
 
         LinearLayout labels = new LinearLayout(c);
         labels.setOrientation(LinearLayout.VERTICAL);
         labels.setPadding(dp(c, 8), 0, dp(c, 8), 0);
-        TextView titleView = text(c, title, 14, true);
+        TextView titleView = text(c, title, 15, true);
         labels.addView(titleView);
         if (subtitle != null && !subtitle.isEmpty()) labels.addView(muted(c, subtitle, 11));
         card.addView(labels, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView arrow = text(c, "›", 20, false);
+        TextView arrow = text(c, "›", 24, false);
         arrow.setTextColor(color(c, R.color.up_text_muted));
         card.addView(arrow);
         card.setTag(titleView);
@@ -605,7 +612,7 @@ public final class Ui {
         b.setInsetBottom(0);
         b.setCornerRadius(dp(c, 16));
         b.setElevation(0);
-        b.setTextColor(color(c, selected ? R.color.white : R.color.up_text));
+        b.setTextColor(color(c, selected ? (ThemePrefs.isDark(c) ? R.color.black : R.color.white) : R.color.up_text));
         b.setBackgroundTintList(ColorStateList.valueOf(color(c, selected ? R.color.up_purple : R.color.up_surface_alt)));
         b.setStrokeColor(ColorStateList.valueOf(color(c, selected ? R.color.up_purple : R.color.up_border)));
         b.setStrokeWidth(dp(c, 1));

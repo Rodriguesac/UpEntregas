@@ -49,9 +49,9 @@ public class PermissionCenterActivity extends AppCompatActivity {
         root.addView(header);
         root.addView(Ui.space(this, 10));
         root.addView(Ui.eyebrow(this, "Configuração do aparelho"));
-        root.addView(Ui.text(this, "Permissões do UP Entregas", 28, true));
+        root.addView(Ui.text(this, "Prepare seu aparelho", 26, true));
         root.addView(Ui.muted(this,
-                "O UP explica cada necessidade aqui. A tela do Android só é aberta quando a permissão pertence ao sistema.", 14));
+                "Configure apenas o necessário para receber corridas e acompanhar entregas com segurança.", 14));
         root.addView(Ui.space(this, 8));
 
         boolean notif = Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(this,
@@ -84,7 +84,7 @@ public class PermissionCenterActivity extends AppCompatActivity {
                 "Permitir em segundo plano", v -> requestBatteryExemption());
 
         permissionCard("Configurações do aplicativo", true,
-                "Use esta tela se o fabricante do celular tiver opções extras de inicialização automática ou bateria.",
+                "Configurações extras de bateria e execução em segundo plano.",
                 "Abrir configurações do app", v -> openAppSettings());
 
         Button test = Ui.greenButton(this, "Testar notificação de corrida");
@@ -97,7 +97,7 @@ public class PermissionCenterActivity extends AppCompatActivity {
 
         root.addView(Ui.space(this, 10));
         root.addView(Ui.muted(this,
-                "Quando você estiver online ou em missão, o Android poderá mostrar uma notificação permanente para manter o serviço ativo. Ela não substitui as telas do UP.", 12));
+                "Quando estiver online, o Android poderá mostrar um aviso permanente para manter sua disponibilidade ativa.", 12));
         setContentView(scroll);
     }
 
@@ -105,7 +105,7 @@ public class PermissionCenterActivity extends AppCompatActivity {
                                 android.view.View.OnClickListener click) {
         LinearLayout c = Ui.card(this);
         LinearLayout row = Ui.row(this);
-        TextView titleView = Ui.text(this, title, 18, true);
+        TextView titleView = Ui.text(this, title, 17, true);
         row.addView(titleView, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         row.addView(Ui.pill(this, ok ? "Liberado" : "Ajustar", ok ? R.color.up_success : R.color.up_warning));
         c.addView(row);

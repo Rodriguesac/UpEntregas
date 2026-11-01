@@ -1,21 +1,22 @@
 <resources>
-    <color name="up_purple">#1648C7</color>
-    <color name="up_purple_soft">#EAF0FF</color>
-    <color name="up_purple_dark">#082D91</color>
-    <color name="up_yellow">#FFC928</color>
-    <color name="up_yellow_dark">#D99C00</color>
-    <color name="up_green">#34D278</color>
-    <color name="up_green_dark">#18A85A</color>
-    <color name="up_bg">#F4F7FB</color>
+    <!-- UP Entregas · tema premium claro -->
+    <color name="up_purple">#245EEA</color>
+    <color name="up_purple_soft">#E8F0FF</color>
+    <color name="up_purple_dark">#123B9F</color>
+    <color name="up_yellow">#FFCE52</color>
+    <color name="up_yellow_dark">#CB900D</color>
+    <color name="up_green">#33D9A0</color>
+    <color name="up_green_dark">#098864</color>
+    <color name="up_bg">#F4F7FC</color>
     <color name="up_surface">#FFFFFF</color>
-    <color name="up_surface_alt">#EEF3FA</color>
-    <color name="up_text">#0D1726</color>
-    <color name="up_text_muted">#65738A</color>
-    <color name="up_border">#D7E0EB</color>
-    <color name="up_success">#18A85A</color>
-    <color name="up_warning">#D99000</color>
-    <color name="up_danger">#D92D20</color>
-    <color name="up_info">#2563EB</color>
+    <color name="up_surface_alt">#F0F4FB</color>
+    <color name="up_text">#14213A</color>
+    <color name="up_text_muted">#61738B</color>
+    <color name="up_border">#E0E7F2</color>
+    <color name="up_success">#087F59</color>
+    <color name="up_warning">#B67B0C</color>
+    <color name="up_danger">#C43042</color>
+    <color name="up_info">#245EEA</color>
     <color name="white">#FFFFFF</color>
-    <color name="black">#000000</color>
+    <color name="black">#0A1830</color>
 </resources>

@@ -62,28 +62,29 @@ public class LoginActivity extends AppCompatActivity {
         root.setGravity(Gravity.CENTER_HORIZONTAL);
         scroll.addView(root);
 
-        root.addView(Ui.space(this, 26));
-        root.addView(Ui.upMark(this, 74));
-        root.addView(Ui.space(this, 12));
-        root.addView(Ui.upWordmark(this, 160, 58));
-        root.addView(Ui.space(this, 22));
+        root.addView(Ui.space(this, 16));
+        root.addView(Ui.upMark(this, 76));
+        root.addView(Ui.space(this, 8));
+        root.addView(Ui.upWordmark(this, 144, 50));
+        root.addView(Ui.space(this, 14));
 
-        TextView welcome = Ui.centered(this, "Sua rota começa aqui", 30, true);
+        TextView welcome = Ui.centered(this, "Sua rota começa aqui", 27, true);
         root.addView(welcome);
         TextView description = Ui.centered(this,
-                "Entre para ficar online, receber corridas e continuar exatamente de onde parou.", 14, false);
+                "Tudo que você precisa para trabalhar, em um só lugar.", 14, false);
         description.setTextColor(Ui.color(this, R.color.up_text_muted));
         LinearLayout.LayoutParams dp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        dp.setMargins(Ui.dp(this, 8), Ui.dp(this, 8), Ui.dp(this, 8), Ui.dp(this, 18));
+        dp.setMargins(Ui.dp(this, 8), Ui.dp(this, 8), Ui.dp(this, 8), Ui.dp(this, 20));
         description.setLayoutParams(dp);
         root.addView(description);
 
         LinearLayout card = Ui.heroCard(this);
-        card.addView(Ui.eyebrow(this, "Acesso do entregador"));
-        card.addView(Ui.text(this, "Entrar no UP", 22, true));
-        card.addView(Ui.muted(this, "Use a conta cadastrada e aprovada pela loja.", 12));
-        card.addView(Ui.space(this, 8));
+        card.addView(Ui.eyebrow(this, "ACESSO SEGURO"));
+        card.addView(Ui.space(this, 4));
+        card.addView(Ui.text(this, "Bem-vindo de volta", 22, true));
+        card.addView(Ui.muted(this, "Entre com seu e-mail e a senha da conta aprovada.", 13));
+        card.addView(Ui.space(this, 10));
 
         TextInputLayout emailBox = Ui.formField(this, "E-mail", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
         TextInputEditText email = Ui.fieldEdit(emailBox);
@@ -111,7 +112,7 @@ public class LoginActivity extends AppCompatActivity {
         status.setLayoutParams(sp);
         card.addView(status);
 
-        Button enter = Ui.button(this, "Entrar");
+        Button enter = Ui.button(this, "Entrar na minha conta");
         card.addView(enter);
 
         Button forgot = Ui.secondaryButton(this, "Esqueci minha senha");
@@ -127,14 +128,13 @@ public class LoginActivity extends AppCompatActivity {
         newHere.setLayoutParams(np);
         root.addView(newHere);
 
-        Button create = Ui.outlineButton(this, "Criar conta de entregador");
+        Button create = Ui.outlineButton(this, "Cadastrar como entregador");
         root.addView(create);
 
-        LinearLayout secure = Ui.noticeCard(this, "Feito para trabalhar na rua",
-                "Corridas direcionadas, localização durante a missão, rotas múltiplas e confirmação por código.",
-                R.color.up_info);
+        TextView secure = Ui.centered(this, "Acesso protegido • UP Entregas", 12, false);
+        secure.setTextColor(Ui.color(this, R.color.up_text_muted));
         root.addView(secure);
-        root.addView(Ui.space(this, 18));
+        root.addView(Ui.space(this, 12));
 
         setContentView(scroll);
 
