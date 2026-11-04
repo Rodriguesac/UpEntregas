@@ -8,6 +8,7 @@ on:
       - 'scripts/test-up-independence.mjs'
       - 'scripts/test-up-handoff-contract.mjs'
       - 'scripts/test-up-status-contract.mjs'
+      - 'scripts/test-up-status-receiver.mjs'
       - 'bridge/**'
       - '.github/workflows/test-up-independence.yml'
   workflow_dispatch:
@@ -27,3 +28,4 @@ jobs:
           node scripts/test-up-independence.mjs
           node scripts/test-up-handoff-contract.mjs
           node scripts/test-up-status-contract.mjs
+          node scripts/test-up-status-receiver.mjs
