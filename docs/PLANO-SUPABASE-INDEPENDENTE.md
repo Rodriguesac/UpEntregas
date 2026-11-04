@@ -73,3 +73,17 @@ Apenas quando todos os itens abaixo forem **verdadeiros**:
 - RLS em tabelas expostas; `anon` e `authenticated` sem permissões diretas.
 - Nunca permitir dupla escrita de GPS entre projetos por tempo indeterminado.
 - Retenção de localização, acesso, incidentes e revogação devem estar documentados antes do lançamento.
+
+
+## Protocolo de retorno e recuperação de falhas — atualização técnica
+
+- `bridge/status-contract.mjs`: define etapas de corrida, sequência monotônica, deduplicação e tradução mínima para status do cliente.
+- `bridge/store-status-receiver/index.ts`: **rascunho de Edge Function**, a implantar somente no Supabase da loja após a virada. Recebe status UP com HMAC, valida vínculo da corrida e utiliza atualização condicional do pedido. Falha de corrida não cancela compra.
+- `bridge/store-outbox.sql`: **SQL de preparação, NÃO aplicado em produção**. Fila privada de até uma mensagem por pedido, com leasing e retries controlados.
+- `bridge/relay-outbox.mjs`: realiza uma tentativa assinada ao novo UP. Respostas 200 confirmadas dão ACK, falhas transitórias podem ser reenviadas; conflitos e autenticação inválida bloqueiam o processamento.
+- `supabase/up-independent-schema.sql`: adiciona sequência única por corrida e concede privilégios explícitos ao papel `service_role`, que no Supabase possui `BYPASSRLS`.
+- **Verificação real:** GitHub Actions executou os scripts JavaScript e aplicou os dois SQLs em bancos PostgreSQL 17 descartáveis. Criou um job, repetiu o mesmo envio sem duplicar, confirmou o evento inicial e testou o ACK da outbox. Execução: https://github.com/Rodriguesac/UpEntregas/actions/runs/41852157191
+
+**Ainda pendente:** a fila deve ser integrada transacionalmente ao ato de encaminhar pedido no servidor da loja, o callback deve ser implantado com segredo privado e o UP novo deve emitir eventos numerados. Sem essas três etapas e sem o segundo projeto Supabase, os componentes acima são preparatórios e não estão servindo pedidos reais.
+
+**Bloqueio atual:** o Supabase recusou a criação de `up-entregas` por limite global de dois projetos gratuitos do proprietário, mesmo com cotação de US$ 0/mês. Esta conexão mostra apenas o projeto ativo da loja. Não pausar nem excluir projetos sem verificar a propriedade, uso atual e autorização explícita.
