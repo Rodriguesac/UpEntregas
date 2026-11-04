@@ -17,6 +17,13 @@ android {
         targetSdk 35
         versionCode 280
         versionName '2.8.0-rastreamento-economico'
+
+        // Endpoint público configurável em build. Nenhum segredo privado no APK.
+        // Valores padrão preservam a conexão da versão já em produção.
+        def upDriverApiUrl = project.findProperty('upDriverApiUrl') ?: 'https://fdqqwdplprzpqufpgdrm.supabase.co/functions/v1/driver-api'
+        def upPublishableKey = project.findProperty('upPublishableKey') ?: 'sb_publishable_yV7nuzH5yz17PzGRVK3o5g_UNvt7b4d'
+        buildConfigField 'String', 'UP_DRIVER_API_URL', '"' + upDriverApiUrl.toString() + '"'
+        buildConfigField 'String', 'UP_PUBLISHABLE_KEY', '"' + upPublishableKey.toString() + '"'
     }
 
     buildTypes {
