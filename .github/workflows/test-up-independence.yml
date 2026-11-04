@@ -9,6 +9,8 @@ on:
       - 'scripts/test-up-handoff-contract.mjs'
       - 'scripts/test-up-status-contract.mjs'
       - 'scripts/test-up-status-receiver.mjs'
+      - 'scripts/test-up-relay-outbox.mjs'
+      - 'scripts/test-up-outbox-schema.mjs'
       - 'bridge/**'
       - '.github/workflows/test-up-independence.yml'
   workflow_dispatch:
@@ -29,3 +31,5 @@ jobs:
           node scripts/test-up-handoff-contract.mjs
           node scripts/test-up-status-contract.mjs
           node scripts/test-up-status-receiver.mjs
+          node scripts/test-up-relay-outbox.mjs
+          node scripts/test-up-outbox-schema.mjs
