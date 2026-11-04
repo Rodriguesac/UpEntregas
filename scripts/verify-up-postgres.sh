@@ -11,7 +11,8 @@ export PGHOST PGPORT PGUSER PGPASSWORD
 psql -v ON_ERROR_STOP=1 -d postgres <<'SQL'
 CREATE ROLE anon NOLOGIN;
 CREATE ROLE authenticated NOLOGIN;
-CREATE ROLE service_role NOLOGIN;
+-- Supabase's service_role bypasses RLS; replicate that grant in this disposable database.
+CREATE ROLE service_role NOLOGIN BYPASSRLS;
 CREATE DATABASE up_test;
 CREATE DATABASE store_test;
 SQL
