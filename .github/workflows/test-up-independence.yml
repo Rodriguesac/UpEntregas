@@ -6,6 +6,8 @@ on:
       - 'supabase/up-independent-schema.sql'
       - 'supabase/functions/up-order-bridge/**'
       - 'scripts/test-up-independence.mjs'
+      - 'scripts/test-up-handoff-contract.mjs'
+      - 'bridge/**'
       - '.github/workflows/test-up-independence.yml'
   workflow_dispatch:
 permissions:
@@ -20,4 +22,6 @@ jobs:
         with:
           node-version: '22'
       - name: Validar integração e isolamento sem acessar produção
-        run: node scripts/test-up-independence.mjs
+        run: |
+          node scripts/test-up-independence.mjs
+          node scripts/test-up-handoff-contract.mjs
