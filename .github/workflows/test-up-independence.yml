@@ -7,6 +7,7 @@ on:
       - 'supabase/functions/up-order-bridge/**'
       - 'scripts/test-up-independence.mjs'
       - 'scripts/test-up-handoff-contract.mjs'
+      - 'scripts/test-up-status-contract.mjs'
       - 'bridge/**'
       - '.github/workflows/test-up-independence.yml'
   workflow_dispatch:
@@ -25,3 +26,4 @@ jobs:
         run: |
           node scripts/test-up-independence.mjs
           node scripts/test-up-handoff-contract.mjs
+          node scripts/test-up-status-contract.mjs
