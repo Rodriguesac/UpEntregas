@@ -154,6 +154,11 @@ revoke all on public.up_couriers, public.up_courier_applications, public.up_jobs
  public.up_wallet_transactions, public.up_payouts, public.up_settings,
  public.up_audit_log from anon,authenticated;
 revoke all on sequence public.up_tracking_points_id_seq from anon,authenticated;
+grant select,insert,update,delete on public.up_couriers, public.up_courier_applications,
+ public.up_jobs,public.up_job_events,public.up_tracking_points,public.up_dispatch_offers,
+ public.up_wallet_transactions,public.up_payouts,public.up_settings,public.up_audit_log
+ to service_role;
+grant usage,select on sequence public.up_tracking_points_id_seq to service_role;
 
 -- Não criar políticas permissivas de cliente; autenticar Firebase nas Edge Functions.
 -- Operações privilegiadas usam somente credenciais service-role no servidor.
