@@ -62,11 +62,12 @@ Deno.serve(async(req:Request)=>{
   const prev=raw.up_bridge&&typeof raw.up_bridge==="object"?raw.up_bridge:{};
   if(prev.mode!=="isolated")return reply(409,{ok:false,error:"independent_bridge_not_enabled"});
   if(prev.jobId&&prev.jobId!==jobId)return reply(409,{ok:false,error:"job_mismatch"});
-  if(SHOP_TERMINAL.has(clean(order.status).toUpperCase()))return reply(409,{ok:false,error:"shop_order_finished"});
   const lastSeq=Number(prev.sequence||0),old=clean(prev.state);
+  // A delivery acknowledgment must be idempotent even when the shop is already marked ENTREGUE.
   if(lastSeq===seq&&prev.eventId===eventId&&old===status)
    return reply(200,{ok:true,duplicate:true,sequence:seq});
   if(seq<=lastSeq)return reply(200,{ok:true,stale:true,sequence:lastSeq});
+  if(SHOP_TERMINAL.has(clean(order.status).toUpperCase()))return reply(409,{ok:false,error:"shop_order_finished"});
   if(TERMINAL.has(old))return reply(409,{ok:false,error:"job_already_terminal"});
   if(old&&!TERMINAL.has(status)&&(RANK.get(status)??-1)<(RANK.get(old)??-1))
    return reply(409,{ok:false,error:"out_of_order_state"});
