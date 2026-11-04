@@ -59,9 +59,11 @@ create table if not exists public.up_jobs (
 create table if not exists public.up_job_events (
   id uuid primary key default gen_random_uuid(),
   job_id uuid not null references public.up_jobs(id) on delete cascade,
+  sequence bigint not null check (sequence >= 1),
   status text not null,
   source text not null,
   event_id uuid not null unique,
+  unique(job_id,sequence),
   notes text,
   occurred_at timestamptz not null default now(),
   delivery_to_store_at timestamptz,
@@ -196,8 +198,8 @@ begin
   if found_job.source_payload_sha256<>p_hash or found_job.source_event_id<>p_event_id then
     raise exception 'handoff_conflict_same_order';
   end if;
-  insert into public.up_job_events(job_id,status,source,event_id,notes)
-   values(found_job.id,found_job.status,'store_handoff',p_event_id,'Pedido pronto recebido da loja')
+  insert into public.up_job_events(job_id,sequence,status,source,event_id,notes)
+   values(found_job.id,1,found_job.status,'store_handoff',p_event_id,'Pedido pronto recebido da loja')
    on conflict(event_id) do nothing;
   return query select found_job.id,found_job.status,created;
 end;
