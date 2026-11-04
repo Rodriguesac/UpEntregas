@@ -8,7 +8,9 @@ const online=/INFINITEPAY|ONLINE|PIX|CARTAO_ONLINE|CARTÃO_ONLINE/;
 const nonEmpty=o=>o&&typeof o==="object"&&!Array.isArray(o);
 const value=(o,keys)=>{for(const k of keys)if(text(o?.[k]))return text(o[k]);return "";};
 function coords(o){
- const lat=Number(o?.latitude??o?.lat),lng=Number(o?.longitude??o?.lng);
+ const rawLat=o?.latitude??o?.lat,rawLng=o?.longitude??o?.lng;
+ if(rawLat==null||rawLng==null||String(rawLat).trim()===""||String(rawLng).trim()==="")return null;
+ const lat=Number(rawLat),lng=Number(rawLng);
  return Number.isFinite(lat)&&lat>=-90&&lat<=90&&Number.isFinite(lng)&&lng>=-180&&lng<=180?{lat,lng}:null;
 }
 export function deliveryAddress(source){
