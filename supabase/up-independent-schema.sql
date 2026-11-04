@@ -155,3 +155,52 @@ revoke all on sequence public.up_tracking_points_id_seq from anon,authenticated;
 
 -- Não criar políticas permissivas de cliente; autenticar Firebase nas Edge Functions.
 -- Operações privilegiadas usam somente credenciais service-role no servidor.
+
+-- Recebimento transacional: nunca criar a corrida sem seu evento inicial.
+-- SECURITY INVOKER e permissão exclusiva para service_role.
+create or replace function public.up_receive_handoff(
+  p_merchant_order_id uuid,
+  p_code text,
+  p_pickup jsonb,
+  p_dropoff jsonb,
+  p_name text,
+  p_phone text,
+  p_collect numeric,
+  p_event_id uuid,
+  p_hash text
+)
+returns table(job_id uuid, job_status text, was_created boolean)
+language plpgsql security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  found_job public.up_jobs%rowtype;
+  new_id uuid;
+  created boolean := false;
+begin
+  if p_merchant_order_id is null or p_event_id is null or p_hash !~ '^[0-9a-f]{64}$' then
+    raise exception 'invalid_handoff_parameters';
+  end if;
+  insert into public.up_jobs(
+    merchant_order_id,merchant_order_code,pickup,dropoff,recipient_name,recipient_phone,
+    collection_amount,source_event_id,source_payload_sha256
+  ) values (
+    p_merchant_order_id,p_code,p_pickup,p_dropoff,p_name,p_phone,
+    p_collect,p_event_id,p_hash
+  ) on conflict (merchant_order_id) do nothing
+  returning id into new_id;
+  if new_id is not null then created := true; end if;
+  select * into found_job from public.up_jobs
+   where merchant_order_id=p_merchant_order_id;
+  if not found then raise exception 'handoff_not_found'; end if;
+  if found_job.source_payload_sha256<>p_hash or found_job.source_event_id<>p_event_id then
+    raise exception 'handoff_conflict_same_order';
+  end if;
+  insert into public.up_job_events(job_id,status,source,event_id,notes)
+   values(found_job.id,found_job.status,'store_handoff',p_event_id,'Pedido pronto recebido da loja')
+   on conflict(event_id) do nothing;
+  return query select found_job.id,found_job.status,created;
+end;
+$$;
+revoke all on function public.up_receive_handoff(uuid,text,jsonb,jsonb,text,text,numeric,uuid,text) from public,anon,authenticated;
+grant execute on function public.up_receive_handoff(uuid,text,jsonb,jsonb,text,text,numeric,uuid,text) to service_role;
