@@ -40,3 +40,39 @@ Esses dois valores são **públicos**. Nunca passar chaves secret/service_role, 
 10. Fazer virada controlada e manter rota de rollback até confirmar dados, integrações e notificações.
 
 **Importante:** publicar apenas o receptor de pedidos não é suficiente para migrar o app. Sem as funções próprias do UP e a integração de status, a entrega ainda dependeria do banco antigo.
+
+
+## Preparação do handoff confiável — atualização de 06/11/2026
+
+Foi testado em PostgreSQL 17 descartável um mecanismo de envio transacional da loja para o UP:
+
+1. O servidor da loja cria um evento imutável via `public.up_store_outbox_enqueue`. O banco valida novamente `PRONTO`, modalidade entrega, código e pagamento. Um pedido só possui uma entrada de envio.
+2. `public.up_store_outbox_claim` verifica o estado do pedido novamente antes da tentativa, retira pedidos cancelados e reserva pequenos lotes com trava e vencimento.
+3. `bridge/store-outbox-worker/index.ts` é o **trabalhador ainda não implantado**. Somente aceita chamada servidor-servidor, token privado, segredo HMAC, `UP_BRIDGE_ENABLED=true` e `UP_BRIDGE_ENDPOINT` apontando para Supabase diferente do banco da loja.
+4. O receptor independente `up-order-bridge` confirma a criação da corrida, validando a assinatura e impedindo duplicação.
+5. Somente após resposta positiva com ID da corrida, `public.up_store_outbox_finish(...,'ack',...)` muda o status da loja para `AGUARDANDO_ENTREGADOR` e registra `raw_payload.up_bridge`. A confirmação e o avanço do pedido acontecem na **mesma transação Postgres**.
+6. Se o UP recebeu, mas o pedido da loja mudou antes do ACK, o registro fica `RECONCILE`, com ID da corrida para conferência; não é apagado nem retransmitido cegamente.
+7. Se o envio falha, pode repetir com o **mesmo event_id e mesmo payload**. Exceder o limite de tentativas também envia para `RECONCILE`.
+
+### Variáveis privadas para implantação FUTURA
+
+| No Supabase da loja | Finalidade |
+|---|---|
+| `UP_BRIDGE_ENABLED` | `false` por padrão; habilitar apenas após virada autorizada |
+| `UP_BRIDGE_ENDPOINT` | URL HTTPS da Edge Function `up-order-bridge` do projeto UP, nunca da loja |
+| `UP_BRIDGE_SECRET` | Segredo longo e aleatório, igual apenas nos dois servidores |
+| `UP_WORKER_TOKEN` | Token privado para disparar o processamento da fila |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | Fornecidos pelo runtime Supabase; exclusivamente servidor |
+
+**Não passar essas variáveis a aplicativos, clientes, GitHub ou páginas web.** O worker e o SQL foram apenas versionados. Não foram ativados no projeto da loja.
+
+### Dependências ainda faltantes antes de produção
+
+- Novo projeto Supabase criado (bloqueado pelo limite de projetos gratuitos).
+- API do entregador e painel UP operando sobre o banco independente.
+- Enfileiramento integrado ao fluxo administrativo com sessão revalidada.
+- Disparo seguro do trabalhador por um serviço agendado.
+- Retorno de estados UP → loja e rastreamento autorizado no site do cliente.
+- Testes reais com pedidos fictícios, notificações e rollback, antes do primeiro pedido de cliente.
+
+Verificar resultados em `https://github.com/Rodriguesac/UpEntregas/actions`.
