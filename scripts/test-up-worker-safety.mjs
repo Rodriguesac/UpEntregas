@@ -28,7 +28,7 @@ assert.ok(!worker.includes('p_decision:"ack"'),'ACK cannot be sent before checki
 assert.ok(sql.includes("if p_decision='ack' and p_job_id is null"),'Cannot ACK UP without a valid job ID');
 assert.ok(sql.includes("'RECONCILE'"),'Unknown cross-system status must be preserved for review');
 assert.ok(sql.includes("where s.id=ticket.order_id and upper(s.status)='PRONTO'"),'Order revalidated at ACK');
-assert.ok(sql.includes("'up_bridge',jsonb_build_object("),'Store order must record isolated UP bridge state');
+assert.ok(sql.includes("'{up_bridge}',jsonb_build_object("),'Store order must record isolated UP bridge state');
 assert.ok(sql.includes("if upper(s.status)<>'PRONTO'"),'Enqueue requires a ready order');
 assert.ok(sql.includes("p_payload#>>'{order,id}'<>p_order_id::text"),'Reject tampered order IDs');
 assert.ok(sql.includes('online_payment_not_confirmed'),'Payment must be checked on enqueue');
