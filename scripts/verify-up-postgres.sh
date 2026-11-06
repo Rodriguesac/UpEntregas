@@ -69,7 +69,8 @@ CREATE TABLE public.orders (
 INSERT INTO public.orders(id,order_code,status,fulfillment_type,payment_method,payment_status) VALUES
  ('00000000-0000-4000-8000-000000000201','711572','PRONTO','ENTREGA','DINHEIRO','PENDENTE'),
  ('00000000-0000-4000-8000-000000000301','800301','PRONTO','ENTREGA','DINHEIRO','PENDENTE'),
- ('00000000-0000-4000-8000-000000000401','800401','PRONTO','ENTREGA','INFINITEPAY','PENDENTE');
+ ('00000000-0000-4000-8000-000000000401','800401','PRONTO','ENTREGA','INFINITEPAY','PENDENTE'),
+ ('00000000-0000-4000-8000-000000000601','800601','PRONTO','ENTREGA','DINHEIRO','PENDENTE');
 -- In Supabase the service_role has privileges on the existing public.orders.
 -- Replicate that grant only inside the disposable integration-test database.
 GRANT SELECT,UPDATE ON public.orders TO service_role;
@@ -131,6 +132,23 @@ SELECT outbox_id FROM public.up_store_outbox_enqueue(
 );
 UPDATE public.orders SET status='CANCELADO' WHERE id='00000000-0000-4000-8000-000000000301';
 SELECT count(*) AS unclaimed_stale FROM public.up_store_outbox_claim(5);
+
+-- The UP accepts a job while the cashier cancels the store order before ACK.
+-- Record the accepted UP job for manual reconciliation instead of wrongly
+-- marking the cancelled store order as ready for delivery.
+SELECT outbox_id FROM public.up_store_outbox_enqueue(
+ '00000000-0000-4000-8000-000000000601',
+ '00000000-0000-4000-8000-000000000602',
+ '{"action":"create_job","event_id":"00000000-0000-4000-8000-000000000602",
+ "order":{"id":"00000000-0000-4000-8000-000000000601","code":"800601",
+ "fulfillment_type":"ENTREGA","status":"PRONTO","pickup":{"street":"Loja"},
+ "dropoff":{"street":"Cliente"},"collection_amount":10}}'::jsonb
+);
+SELECT outbox_id,lease_id FROM public.up_store_outbox_claim(5) \gset conflict_
+UPDATE public.orders SET status='CANCELADO'
+ WHERE id='00000000-0000-4000-8000-000000000601';
+SELECT public.up_store_outbox_finish(:'conflict_outbox_id'::uuid,:'conflict_lease_id'::uuid,
+ 'ack',null,'00000000-0000-4000-8000-000000000603'::uuid) AS reconciled;
 RESET ROLE;
 DO $$
 BEGIN
@@ -146,8 +164,15 @@ BEGIN
  IF (SELECT count(*) FROM up_bridge_private.handoff_outbox WHERE state='CANCELLED' AND attempts=0)<>1 THEN
   RAISE EXCEPTION 'Cancelled order was sent despite the second readiness check';
  END IF;
- IF (SELECT count(*) FROM up_bridge_private.handoff_outbox)<>2 THEN
+ IF (SELECT count(*) FROM up_bridge_private.handoff_outbox)<>3 THEN
   RAISE EXCEPTION 'Duplicate queue row or unpaid checkout inserted';
+ END IF;
+ IF (SELECT count(*) FROM up_bridge_private.handoff_outbox WHERE state='RECONCILE'
+     AND up_job_id='00000000-0000-4000-8000-000000000603')<>1 THEN
+  RAISE EXCEPTION 'UP ACK was lost after the store order changed';
+ END IF;
+ IF (SELECT status FROM public.orders WHERE order_code='800601')<>'CANCELADO' THEN
+  RAISE EXCEPTION 'ACK wrongly reopened a cancelled order';
  END IF;
  IF has_table_privilege('anon','up_bridge_private.handoff_outbox','SELECT') THEN
   RAISE EXCEPTION 'Anonymous user can read private outbox';
