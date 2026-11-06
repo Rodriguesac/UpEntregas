@@ -5,11 +5,11 @@ const up=readFileSync("supabase/up-independent-schema.sql","utf8");
 const relay=readFileSync("bridge/relay-outbox.mjs","utf8");
 for(const part of [
  "create schema if not exists up_bridge_private",
- "revoke all on schema up_bridge_private from public, anon, authenticated",
+ "revoke all on schema up_bridge_private from public,anon,authenticated",
  "order_id uuid not null unique",
  "event_id uuid not null unique",
  "payload jsonb not null",
- "for update skip locked",
+ "for update of o skip locked",
  "lease_id=gen_random_uuid()",
  "leased_until=now()+interval '90 seconds'",
  "o.state='SENDING'",
