@@ -70,6 +70,9 @@ INSERT INTO public.orders(id,order_code,status,fulfillment_type,payment_method,p
  ('00000000-0000-4000-8000-000000000201','711572','PRONTO','ENTREGA','DINHEIRO','PENDENTE'),
  ('00000000-0000-4000-8000-000000000301','800301','PRONTO','ENTREGA','DINHEIRO','PENDENTE'),
  ('00000000-0000-4000-8000-000000000401','800401','PRONTO','ENTREGA','INFINITEPAY','PENDENTE');
+-- In Supabase the service_role has privileges on the existing public.orders.
+-- Replicate that grant only inside the disposable integration-test database.
+GRANT SELECT,UPDATE ON public.orders TO service_role;
 SQL
 
 psql -v ON_ERROR_STOP=1 -d store_test -f bridge/store-outbox.sql
