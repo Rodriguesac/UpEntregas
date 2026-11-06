@@ -60,28 +60,91 @@ END $$;
 SQL
 
 psql -v ON_ERROR_STOP=1 -d store_test <<'SQL'
-CREATE TABLE public.orders (id uuid primary key);
-INSERT INTO public.orders(id) VALUES ('00000000-0000-4000-8000-000000000201');
+CREATE TABLE public.orders (
+ id uuid primary key,order_code text not null,status text not null,
+ fulfillment_type text not null,courier_id uuid,payment_method text,
+ payment_status text,raw_payload jsonb not null default '{}'::jsonb,
+ updated_at timestamptz not null default now()
+);
+INSERT INTO public.orders(id,order_code,status,fulfillment_type,payment_method,payment_status) VALUES
+ ('00000000-0000-4000-8000-000000000201','711572','PRONTO','ENTREGA','DINHEIRO','PENDENTE'),
+ ('00000000-0000-4000-8000-000000000301','800301','PRONTO','ENTREGA','DINHEIRO','PENDENTE'),
+ ('00000000-0000-4000-8000-000000000401','800401','PRONTO','ENTREGA','INFINITEPAY','PENDENTE');
 SQL
 
 psql -v ON_ERROR_STOP=1 -d store_test -f bridge/store-outbox.sql
 
 psql -v ON_ERROR_STOP=1 -d store_test <<'SQL'
 SET ROLE service_role;
-INSERT INTO up_bridge_private.handoff_outbox(order_id,event_id,payload)
-VALUES (
+-- Real server-side enqueue validates the order and freezes a unique event ID.
+SELECT outbox_id,was_created FROM public.up_store_outbox_enqueue(
  '00000000-0000-4000-8000-000000000201',
  '00000000-0000-4000-8000-000000000202',
- '{"action":"create_job","event_id":"00000000-0000-4000-8000-000000000202"}'::jsonb
+ '{"action":"create_job","event_id":"00000000-0000-4000-8000-000000000202",
+ "order":{"id":"00000000-0000-4000-8000-000000000201","code":"711572",
+ "fulfillment_type":"ENTREGA","status":"PRONTO","pickup":{"street":"Loja teste"},
+ "dropoff":{"street":"Rua teste"},"collection_amount":10}}'::jsonb
+);
+-- Sending the exact same request returns the original queue row, never duplicates.
+SELECT outbox_id,was_created FROM public.up_store_outbox_enqueue(
+ '00000000-0000-4000-8000-000000000201',
+ '00000000-0000-4000-8000-000000000202',
+ '{"action":"create_job","event_id":"00000000-0000-4000-8000-000000000202",
+ "order":{"id":"00000000-0000-4000-8000-000000000201","code":"711572",
+ "fulfillment_type":"ENTREGA","status":"PRONTO","pickup":{"street":"Loja teste"},
+ "dropoff":{"street":"Rua teste"},"collection_amount":10}}'::jsonb
 );
 SELECT outbox_id,lease_id FROM public.up_store_outbox_claim(5) \gset
 SELECT public.up_store_outbox_finish(:'outbox_id'::uuid,:'lease_id'::uuid,
  'ack',null,'00000000-0000-4000-8000-000000000203'::uuid) AS acknowledged;
+
+-- Pending online payment cannot be queued.
+DO $$
+DECLARE rejected boolean:=false;
+BEGIN
+ BEGIN
+  perform public.up_store_outbox_enqueue(
+   '00000000-0000-4000-8000-000000000401',
+   '00000000-0000-4000-8000-000000000402',
+   '{"action":"create_job","event_id":"00000000-0000-4000-8000-000000000402",
+    "order":{"id":"00000000-0000-4000-8000-000000000401",
+    "code":"800401","status":"PRONTO","fulfillment_type":"ENTREGA",
+    "pickup":{"street":"Loja"},"dropoff":{"street":"Cliente"},"collection_amount":0}}'::jsonb
+  );
+ EXCEPTION WHEN OTHERS THEN
+  IF sqlerrm='online_payment_not_confirmed' THEN rejected:=true; ELSE RAISE; END IF;
+ END;
+ IF NOT rejected THEN RAISE EXCEPTION 'Pending online payment was enqueued'; END IF;
+END $$;
+
+-- An order cancelled while queued is removed before any UP API request.
+SELECT outbox_id FROM public.up_store_outbox_enqueue(
+ '00000000-0000-4000-8000-000000000301',
+ '00000000-0000-4000-8000-000000000302',
+ '{"action":"create_job","event_id":"00000000-0000-4000-8000-000000000302",
+ "order":{"id":"00000000-0000-4000-8000-000000000301","code":"800301",
+ "fulfillment_type":"ENTREGA","status":"PRONTO","pickup":{"street":"Loja"},
+ "dropoff":{"street":"Cliente"},"collection_amount":0}}'::jsonb
+);
+UPDATE public.orders SET status='CANCELADO' WHERE id='00000000-0000-4000-8000-000000000301';
+SELECT count(*) AS unclaimed_stale FROM public.up_store_outbox_claim(5);
 RESET ROLE;
 DO $$
 BEGIN
- IF (SELECT count(*) FROM up_bridge_private.handoff_outbox WHERE state='ACKED' AND attempts=1)<>1 THEN
+ IF (SELECT count(*) FROM up_bridge_private.handoff_outbox WHERE state='ACKED' AND attempts=1 AND up_job_id IS NOT NULL)<>1 THEN
   RAISE EXCEPTION 'Outbox message not acknowledged';
+ END IF;
+ IF (SELECT status FROM public.orders WHERE order_code='711572')<>'AGUARDANDO_ENTREGADOR' THEN
+  RAISE EXCEPTION 'Store order advanced before/without UP acknowledgment';
+ END IF;
+ IF (SELECT raw_payload #>> '{up_bridge,mode}' FROM public.orders WHERE order_code='711572')<>'isolated' THEN
+  RAISE EXCEPTION 'UP callback was not activated on store order';
+ END IF;
+ IF (SELECT count(*) FROM up_bridge_private.handoff_outbox WHERE state='CANCELLED' AND attempts=0)<>1 THEN
+  RAISE EXCEPTION 'Cancelled order was sent despite the second readiness check';
+ END IF;
+ IF (SELECT count(*) FROM up_bridge_private.handoff_outbox)<>2 THEN
+  RAISE EXCEPTION 'Duplicate queue row or unpaid checkout inserted';
  END IF;
  IF has_table_privilege('anon','up_bridge_private.handoff_outbox','SELECT') THEN
   RAISE EXCEPTION 'Anonymous user can read private outbox';
