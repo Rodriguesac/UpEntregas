@@ -42,8 +42,8 @@ begin
  if not found or courier.state<>'APPROVED' then raise exception 'courier_not_approved';end if;
  select * into job from public.up_jobs where id=p_job for update;
  if not found then raise exception 'job_not_found';end if;
- select * into offer from public.up_dispatch_offers where id=p_offer
-  and job_id=p_job and courier_id=p_courier for update;
+ select * into offer from public.up_dispatch_offers o where o.id=p_offer
+  and o.job_id=p_job and o.courier_id=p_courier for update;
  if not found then raise exception 'offer_not_found';end if;
  if job.assigned_courier_id=p_courier and job.status in
     ('ACCEPTED','TO_STORE','AT_STORE','TO_CUSTOMER','AT_CUSTOMER','DELIVERED')
@@ -58,9 +58,9 @@ begin
  end if;
  update public.up_jobs set assigned_courier_id=p_courier,status='ACCEPTED',
   assigned_at=now(),updated_at=now() where id=p_job;
- update public.up_dispatch_offers set status='ACCEPTED',responded_at=now() where id=p_offer;
- update public.up_dispatch_offers set status='CANCELLED',responded_at=now()
-  where job_id=p_job and id<>p_offer and status='PENDING';
+ update public.up_dispatch_offers o set status='ACCEPTED',responded_at=now() where o.id=p_offer;
+ update public.up_dispatch_offers o set status='CANCELLED',responded_at=now()
+  where o.job_id=p_job and o.id<>p_offer and o.status='PENDING';
  select coalesce(max(e.sequence),0)+1 into next_seq
   from public.up_job_events e where e.job_id=p_job;
  insert into public.up_job_events(job_id,sequence,status,source,event_id,notes)
