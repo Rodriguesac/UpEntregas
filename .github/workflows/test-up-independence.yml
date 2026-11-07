@@ -16,6 +16,7 @@ on:
       - 'scripts/test-up-worker-safety.mjs'
       - 'scripts/test-up-status-relay.mjs'
       - 'scripts/test-up-independent-driver.mjs'
+      - 'scripts/test-up-independent-registration.mjs'
       - 'scripts/verify-up-driver-postgres.sh'
       - 'bridge/**'
       - '.github/workflows/test-up-independence.yml'
@@ -55,6 +56,7 @@ jobs:
       - name: Verificar compilação das Edge Functions independentes (sem deploy)
         run: |
           deno check supabase/functions/driver-api-independent/index.ts
+          deno check supabase/functions/driver-registration-independent/index.ts
           deno check supabase/functions/up-status-relay/index.ts
           deno check supabase/functions/up-order-bridge/index.ts
       - name: Validar integração e isolamento sem acessar produção
@@ -68,6 +70,7 @@ jobs:
           node scripts/test-up-worker-safety.mjs
           node scripts/test-up-status-relay.mjs
           node scripts/test-up-independent-driver.mjs
+          node scripts/test-up-independent-registration.mjs
       - name: Validar SQL em PostgreSQL descartável
         run: |
           if ! command -v psql >/dev/null 2>&1; then
