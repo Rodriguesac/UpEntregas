@@ -1,6 +1,21 @@
 -- UP Entregas: driver operations for the INDEPENDENT project only.
 -- Apply AFTER up-independent-schema.sql; never run this file in store production.
 -- Exposed RPCs are service_role only; Edge driver API must verify Firebase JWT.
+
+-- Device notification tokens remain server-only and cannot be read directly.
+create table if not exists public.up_driver_devices (
+ id uuid primary key default gen_random_uuid(),
+ courier_id uuid not null references public.up_couriers(id) on delete cascade,
+ token text not null unique,
+ platform text not null default 'android',
+ active boolean not null default true,
+ updated_at timestamptz not null default now()
+);
+create index if not exists up_driver_devices_owner_idx on public.up_driver_devices(courier_id,active);
+alter table public.up_driver_devices enable row level security;
+revoke all on public.up_driver_devices from anon,authenticated;
+grant select,insert,update,delete on public.up_driver_devices to service_role;
+
 create unique index if not exists up_one_accepted_offer_per_job
  on public.up_dispatch_offers(job_id) where status='ACCEPTED';
 create index if not exists up_driver_offer_due_idx
