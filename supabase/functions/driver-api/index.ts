@@ -1,5 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.56.1";
+import {nextStage,canPickup,canFinish,canRecordLocation,canExposeLocationToCustomer,canOfferToCourier,parseGpsCoordinates,shouldThrottleGpsSample} from "../_shared/up-operations.mjs";
+import {upAtomicDispatch} from "../_shared/up-atomic-dispatch.mjs";
 import { createRemoteJWKSet, jwtVerify } from "npm:jose@5.9.6";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
@@ -264,20 +266,33 @@ async function orderById(admin: any, id: string) {
 }
 
 async function currentOrder(admin: any, courierId: string) {
-  const result = await admin.from("orders").select(ORDER_SELECT).eq("courier_id", courierId).order("updated_at", { ascending: false }).limit(20);
+  const result = await admin.from("orders").select(ORDER_SELECT).eq("courier_id", courierId)
+    .not("status","in","(ENTREGUE,CONCLUIDO,CONCLUÍDO,FINALIZADO,CANCELADO,CANCELADA,CANCELED,CANCELLED,DELIVERED,COMPLETED,RETIRADO)")
+    .order("updated_at", { ascending: false }).limit(1);
   if (result.error) throw new Error(`current_order_failed: ${result.error.message}`);
   return (result.data || []).find((row: any) => !TERMINAL_STATUSES.has(text(row.status).toUpperCase())) || null;
 }
 
-async function offeredOrder(admin: any, firebaseUid: string) {
-  const result = await admin.from("orders").select(ORDER_SELECT).is("courier_id", null).order("created_at", { ascending: true }).limit(30);
+async function offeredOrder(admin: any, courier: any, firebaseUid: string) {
+  // A oferta específica do gestor tem prioridade e não depende de estar
+  // entre os 30 pedidos antigos retornados pela fila genérica.
+  const dedicated = await admin.from("orders").select(ORDER_SELECT)
+    .is("courier_id", null)
+    .contains("raw_payload", { up_target_courier_id: courier.id })
+    .in("status", ["AGUARDANDO_ENTREGADOR","BUSCANDO_ENTREGADOR","PRONTO","DESPACHADO"])
+    .order("created_at", { ascending: true }).limit(20);
+  if (dedicated.error) throw new Error(`offer_dedicated_failed: ${dedicated.error.message}`);
+  const targeted = (dedicated.data || []).find((row: any) => canOfferToCourier(row,courier.id,firebaseUid));
+  if (targeted) return targeted;
+
+  // Compatibilidade com corridas antigas sem destinatário.
+  const result = await admin.from("orders").select(ORDER_SELECT).is("courier_id", null)
+    .in("status", ["AGUARDANDO_ENTREGADOR","BUSCANDO_ENTREGADOR","PRONTO","DESPACHADO"])
+    .order("created_at", { ascending: true }).limit(100);
   if (result.error) throw new Error(`offer_lookup_failed: ${result.error.message}`);
-  return (result.data || []).find((row: any) => {
-    if (text(row.fulfillment_type).toUpperCase() !== "ENTREGA" && text(row.fulfillment_type).toUpperCase() !== "DELIVERY") return false;
-    if (!OFFER_STATUSES.has(text(row.status).toUpperCase())) return false;
-    const rejected = object(row.raw_payload)?.up_rejected_by;
-    return !Array.isArray(rejected) || !rejected.includes(firebaseUid);
-  }) || null;
+  return (result.data || []).find((row: any) =>
+    !object(row.raw_payload).up_target_courier_id && canOfferToCourier(row,courier.id,firebaseUid)
+  ) || null;
 }
 
 async function event(admin: any, orderId: string, status: string, firebaseUid: string, note = "", raw: Record<string, any> = {}) {
@@ -376,23 +391,33 @@ Deno.serve(async (req: Request) => {
 
     if (action === "presence") {
       const online = bool(body.online);
+      const active = await currentOrder(admin,courier.id);
       const metadata = { ...object(courier.metadata), app_version: text(body.app_version), last_presence_at: now };
-      const updated = await admin.from("couriers").update({ online, status: online ? "available" : "offline", metadata, updated_at: now }).eq("id", courier.id);
+      // Não liberar um motoboy como disponível por simples reconexão durante missão.
+      const busyStatus=active ? (text(courier.status).toLowerCase()==="available" ? "pickup" : courier.status) : null;
+      const updated = await admin.from("couriers").update({
+        online, status: busyStatus || (online ? "available" : "offline"), metadata, updated_at: now
+      }).eq("id", courier.id).eq("updated_at",courier.updated_at).select("id").maybeSingle();
       if (updated.error) throw new Error(`presence_update_failed: ${updated.error.message}`);
+      if (!updated.data) return json({error:"courier_changed",message:"Status atualizado em outro aparelho. Tente novamente."},409);
       return json({ ok: true });
     }
 
     if (action === "telemetry") {
       const metadata = { ...object(courier.metadata), battery_level: num(body.battery_level), charging: bool(body.charging), app_version: text(body.app_version), telemetry_at: now };
-      const updated = await admin.from("couriers").update({ metadata, updated_at: now }).eq("id", courier.id);
+      const updated = await admin.from("couriers").update({ metadata, updated_at: now })
+        .eq("id", courier.id).eq("updated_at",courier.updated_at).select("id").maybeSingle();
       if (updated.error) throw new Error(`telemetry_update_failed: ${updated.error.message}`);
+      if (!updated.data) return json({error:"courier_changed",message:"Telemetria desatualizada. Tente novamente."},409);
       return json({ ok: true });
     }
 
     if (action === "equipment") {
       const metadata = { ...object(courier.metadata), has_cash: bool(body.has_cash), cash_available: Math.max(0, num(body.cash_available)), has_machine: bool(body.has_machine), machine_types: text(body.machine_types), equipment_at: now };
-      const updated = await admin.from("couriers").update({ metadata, updated_at: now }).eq("id", courier.id);
+      const updated = await admin.from("couriers").update({ metadata, updated_at: now })
+        .eq("id", courier.id).eq("updated_at",courier.updated_at).select("id").maybeSingle();
       if (updated.error) throw new Error(`equipment_update_failed: ${updated.error.message}`);
+      if (!updated.data) return json({error:"courier_changed",message:"Cadastro atualizado em outro aparelho. Tente novamente."},409);
       return json({ ok: true });
     }
 
@@ -407,7 +432,7 @@ Deno.serve(async (req: Request) => {
     if (action === "offer") {
       const current = await currentOrder(admin, courier.id);
       if (current) return json({ ok: true, document: orderDocument(current, firebaseUid, false, courier) });
-      const offered = await offeredOrder(admin, firebaseUid);
+      const offered = await offeredOrder(admin, courier, firebaseUid);
       return json({ ok: true, document: offered ? orderDocument(offered, firebaseUid, true, courier) : null });
     }
 
@@ -426,7 +451,7 @@ Deno.serve(async (req: Request) => {
       if (!row) return json({ error: "mission_not_found", message: "Entrega não encontrada." }, 404);
       const raw = object(row.raw_payload);
       const rejected = Array.isArray(raw.up_rejected_by) ? raw.up_rejected_by : [];
-      const allowedOffer = !row.courier_id && OFFER_STATUSES.has(text(row.status).toUpperCase()) && !rejected.includes(firebaseUid);
+      const allowedOffer = canOfferToCourier(row,courier.id,firebaseUid);
       if (row.courier_id !== courier.id && !allowedOffer) return json({ error: "mission_forbidden", message: "Esta entrega não está disponível para você." }, 403);
       return json({ ok: true, document: orderDocument(row, firebaseUid, !row.courier_id, courier) });
     }
@@ -435,16 +460,29 @@ Deno.serve(async (req: Request) => {
       const row = await orderById(admin, missionId);
       if (!row) return json({ error: "mission_not_found", message: "Entrega não encontrada." }, 404);
       if (row.courier_id && row.courier_id !== courier.id) return json({ error: "mission_taken", message: "Esta entrega já foi aceita por outro entregador." }, 409);
-      if (!row.courier_id && !OFFER_STATUSES.has(text(row.status).toUpperCase())) return json({ error: "mission_not_available", message: "Esta entrega não está mais disponível." }, 409);
-      const raw = { ...object(row.raw_payload), up_state: "TO_STORE", up_status: "ACEITA", up_delivery_status: "ENTREGADOR_A_CAMINHO_LOJA", up_driver_uid: firebaseUid, up_accepted_at: now, up_source: APP_SOURCE };
-      let update = admin.from("orders").update({ courier_id: courier.id, raw_payload: raw, accepted_at: row.accepted_at || now, updated_at: now }).eq("id", missionId);
-      if (!row.courier_id) update = update.is("courier_id", null);
-      const saved = await update.select("id");
-      if (saved.error) throw new Error(`accept_failed: ${saved.error.message}`);
-      if (!saved.data?.length) return json({ error: "mission_taken", message: "Esta entrega acabou de ser aceita por outro entregador." }, 409);
-      await admin.from("couriers").update({ status: "pickup", online: true, metadata: { ...object(courier.metadata), current_order_id: missionId, up_state: "TO_STORE" }, updated_at: now }).eq("id", courier.id);
-      await event(admin, missionId, "ENTREGADOR_ACEITOU", firebaseUid, "Entrega aceita no UP Entregas.");
-      return json({ ok: true });
+      if (row.courier_id === courier.id && text(row.raw_payload?.up_state) === "TO_STORE") return json({ok:true,already_accepted:true});
+      if (!row.courier_id && !canOfferToCourier(row,courier.id,firebaseUid)) return json({ error: "mission_not_available", message: "Esta oferta não está disponível para você." }, 409);
+      const activeMission=await currentOrder(admin,courier.id);
+      if(activeMission && activeMission.id !== missionId) return json({
+        error:"courier_busy",message:"Conclua sua entrega atual antes de aceitar outra corrida."
+      },409);
+      if(!row.courier_id && courier.online!==true) return json({
+        error:"courier_offline",message:"Fique online antes de aceitar a oferta."
+      },409);
+      try{
+        // A RPC revalida Firebase UID, oferta, status e outra missão dentro
+        // do lock SQL. Não existe caminho alternativo que atribua courier_id.
+        const committed=await upAtomicDispatch(admin,{
+          action:"accept",orderId:missionId,courierId:courier.id,
+          firebaseUid,actorId:firebaseUid,source:"UP_ENTREGAS"
+        });
+        return json({ok:true,already_accepted:committed.already_accepted===true});
+      }catch(error:any){
+        return json({error:error.code||"rpc_unavailable",
+          message:error.message||"Não foi possível confirmar o aceite."},
+          error.status||503);
+      }
+
     }
 
     if (action === "reject" || action === "expire") {
@@ -453,11 +491,15 @@ Deno.serve(async (req: Request) => {
       if (row.courier_id && row.courier_id !== courier.id) return json({ error: "mission_forbidden", message: "Esta entrega não está disponível para você." }, 403);
       if (row.courier_id === courier.id) return json({ error: "mission_already_accepted", message: "A entrega já foi aceita. Use a opção de ajuda." }, 409);
       const raw = object(row.raw_payload);
+      if (raw.up_target_courier_id && String(raw.up_target_courier_id)!==String(courier.id)) return json({error:"offer_for_other_driver",message:"Oferta destinada a outro entregador."},403);
       const rejected = Array.isArray(raw.up_rejected_by) ? [...raw.up_rejected_by] : [];
-      if (!rejected.includes(firebaseUid)) rejected.push(firebaseUid);
-      const nextRaw = { ...raw, up_rejected_by: rejected, up_last_rejection_reason: action === "expire" ? "Oferta expirada" : text(body.reason), up_last_rejection_at: now };
-      const saved = await admin.from("orders").update({ raw_payload: nextRaw, updated_at: now }).eq("id", missionId).is("courier_id", null);
+      if (rejected.includes(firebaseUid)) return json({ok:true,already_rejected:true});
+      rejected.push(firebaseUid);
+      const nextRaw: Record<string, any> = { ...raw, up_rejected_by: rejected, up_last_rejection_reason: action === "expire" ? "Oferta expirada" : text(body.reason), up_last_rejection_at: now };
+      delete nextRaw.up_target_courier_id;
+      const saved = await admin.from("orders").update({ raw_payload: nextRaw, updated_at: now }).eq("id", missionId).is("courier_id", null).eq("updated_at",row.updated_at).select("id").maybeSingle();
       if (saved.error) throw new Error(`reject_failed: ${saved.error.message}`);
+      if (!saved.data) return json({error:"offer_changed",message:"Esta oferta mudou. Atualize a lista."},409);
       await event(admin, missionId, action === "expire" ? "OFERTA_EXPIRADA" : "ENTREGADOR_RECUSOU", firebaseUid, action === "expire" ? "Tempo da oferta encerrado." : text(body.reason));
       return json({ ok: true });
     }
@@ -468,13 +510,18 @@ Deno.serve(async (req: Request) => {
     if (action === "stage") {
       const status = text(body.status).toUpperCase();
       const deliveryStatus = text(body.delivery_status).toUpperCase();
-      const state = status === "COLETANDO" ? "AT_STORE" : status === "NO_CLIENTE" ? "AT_CUSTOMER" : status === "EM_ENTREGA" ? "TO_CUSTOMER" : "TO_STORE";
+      if ((status==="COLETANDO"&&text(raw.up_state)==="AT_STORE")||(status==="NO_CLIENTE"&&text(raw.up_state)==="AT_CUSTOMER"))return json({ok:true,already_at_stage:true});
+      const state = nextStage(row,status);
+      if (!state) return json({ error:"invalid_mission_transition",message:"Esta etapa não pode ser confirmada antes da etapa anterior." },409);
       const nextRaw: Record<string, any> = { ...raw, up_state: state, up_status: status, up_delivery_status: deliveryStatus, up_status_at: now, up_source: APP_SOURCE };
       const timestampField = text(body.timestamp_field);
-      if (timestampField && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(timestampField)) nextRaw[timestampField] = now;
-      const saved = await admin.from("orders").update({ raw_payload: nextRaw, updated_at: now }).eq("id", missionId).eq("courier_id", courier.id);
+      if (["chegouLojaEm","chegouClienteEm"].includes(timestampField)) nextRaw[timestampField] = now;
+      const saved = await admin.from("orders").update({ raw_payload: nextRaw, updated_at: now }).eq("id", missionId).eq("courier_id", courier.id).eq("updated_at",row.updated_at).select("id").maybeSingle();
       if (saved.error) throw new Error(`stage_failed: ${saved.error.message}`);
-      await admin.from("couriers").update({ status: state === "TO_CUSTOMER" ? "delivery" : state === "AT_CUSTOMER" ? "at_customer" : "pickup", tracking_enabled: true, metadata: { ...object(courier.metadata), current_order_id: missionId, up_state: state }, updated_at: now }).eq("id", courier.id);
+      if (!saved.data) return json({error:"mission_changed",message:"A entrega mudou em outro aparelho. Atualize."},409);
+      const courierStage=await admin.from("couriers").update({ status: state === "TO_CUSTOMER" ? "delivery" : state === "AT_CUSTOMER" ? "at_customer" : "pickup", tracking_enabled: true, metadata: { ...object(courier.metadata), current_order_id: missionId, up_state: state }, updated_at: now }).eq("id", courier.id).eq("updated_at",courier.updated_at).select("id").maybeSingle();
+      if(courierStage.error)throw new Error(`courier_stage_failed: ${courierStage.error.message}`);
+      if(!courierStage.data)return json({error:"mission_changed",message:"Missão alterada. Atualize os dados."},409);
       await event(admin, missionId, deliveryStatus || status, firebaseUid, "Etapa atualizada pelo entregador.", { up_state: state });
       if (state === "TO_CUSTOMER" || state === "AT_CUSTOMER") {
         const latest = await orderById(admin, missionId);
@@ -484,13 +531,18 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "pickup") {
+      if (text(raw.up_state)==="TO_CUSTOMER"&&raw.up_pickup_at)return json({ok:true,already_picked_up:true});
+      if (!canPickup(row)) return json({error:"pickup_not_available",message:"Confirme a chegada à loja antes da retirada."},409);
       const expected = first(raw, "codigoRetirada", "pickupCode") || text(row.pickup_code);
       const entered = text(body.code);
       if (expected && expected !== entered) return json({ error: "invalid_pickup_code", message: "Código de retirada incorreto." }, 409);
       const nextRaw = { ...raw, up_state: "TO_CUSTOMER", up_status: "EM_ENTREGA", up_delivery_status: "SAIU_PARA_ENTREGA", up_pickup_at: now, up_source: APP_SOURCE };
-      const saved = await admin.from("orders").update({ status: "DESPACHADO", raw_payload: nextRaw, dispatched_at: now, updated_at: now }).eq("id", missionId).eq("courier_id", courier.id);
+      const saved = await admin.from("orders").update({ status: "DESPACHADO", raw_payload: nextRaw, dispatched_at: now, updated_at: now }).eq("id", missionId).eq("courier_id", courier.id).eq("updated_at",row.updated_at).select("id").maybeSingle();
       if (saved.error) throw new Error(`pickup_failed: ${saved.error.message}`);
-      await admin.from("couriers").update({ status: "delivery", tracking_enabled: true, metadata: { ...object(courier.metadata), current_order_id: missionId, up_state: "TO_CUSTOMER" }, updated_at: now }).eq("id", courier.id);
+      if (!saved.data) return json({error:"mission_changed",message:"A retirada mudou em outro aparelho. Atualize."},409);
+      const courierPickup=await admin.from("couriers").update({ status: "delivery", tracking_enabled: true, metadata: { ...object(courier.metadata), current_order_id: missionId, up_state: "TO_CUSTOMER" }, updated_at: now }).eq("id", courier.id).eq("updated_at",courier.updated_at).select("id").maybeSingle();
+      if(courierPickup.error)throw new Error(`courier_pickup_failed: ${courierPickup.error.message}`);
+      if(!courierPickup.data)return json({error:"mission_changed",message:"Missão alterada. Atualize os dados."},409);
       await event(admin, missionId, "SAIU_PARA_ENTREGA", firebaseUid, "Pedido retirado na loja.");
       const latest = await orderById(admin, missionId);
       if (latest) await sendCustomerPush(admin, latest, "SAIU_PARA_ENTREGA");
@@ -498,14 +550,19 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "finish") {
+      if (text(raw.up_state)==="DELIVERED"&&text(row.status).toUpperCase()==="ENTREGUE")return json({ok:true,already_delivered:true});
+      if (!canFinish(row)) return json({error:"delivery_not_ready",message:"Confirme chegada ao cliente antes de concluir a entrega."},409);
       const expected = first(raw, "codigoEntrega", "deliveryCode");
       const entered = text(body.code);
       if (expected && expected !== entered) return json({ error: "invalid_delivery_code", message: "Código de entrega incorreto." }, 409);
       const received = Math.max(0, num(body.received_amount));
       const nextRaw = { ...raw, up_state: "DELIVERED", up_status: "ENTREGUE", up_delivery_status: "ENTREGUE", up_delivered_at: now, up_received_amount: received, up_delivery_code_confirmed: Boolean(entered), up_source: APP_SOURCE };
-      const saved = await admin.from("orders").update({ status: "ENTREGUE", payment_details: { ...object(row.payment_details), received_by_courier: received, received_at: now }, raw_payload: nextRaw, completed_at: now, updated_at: now }).eq("id", missionId).eq("courier_id", courier.id);
+      const saved = await admin.from("orders").update({ status: "ENTREGUE", payment_details: { ...object(row.payment_details), received_by_courier: received, received_at: now }, raw_payload: nextRaw, completed_at: now, updated_at: now }).eq("id", missionId).eq("courier_id", courier.id).eq("updated_at",row.updated_at).select("id").maybeSingle();
       if (saved.error) throw new Error(`finish_failed: ${saved.error.message}`);
-      await admin.from("couriers").update({ status: courier.online ? "available" : "offline", tracking_enabled: false, metadata: { ...object(courier.metadata), current_order_id: null, up_state: "DELIVERED" }, updated_at: now }).eq("id", courier.id);
+      if (!saved.data) return json({error:"mission_changed",message:"A conclusão mudou em outro aparelho. Atualize."},409);
+      const courierFinish=await admin.from("couriers").update({ status: courier.online ? "available" : "offline", tracking_enabled: false, metadata: { ...object(courier.metadata), current_order_id: null, up_state: "DELIVERED" }, updated_at: now }).eq("id", courier.id).eq("updated_at",courier.updated_at).select("id").maybeSingle();
+      if(courierFinish.error)throw new Error(`courier_finish_failed: ${courierFinish.error.message}`);
+      if(!courierFinish.data)return json({error:"mission_changed",message:"Missão alterada. Atualize os dados."},409);
       await event(admin, missionId, "ENTREGUE", firebaseUid, "Entrega concluída no UP Entregas.", { received_amount: received });
       const latest = await orderById(admin, missionId);
       if (latest) await sendCustomerPush(admin, latest, "ENTREGUE");
@@ -513,20 +570,23 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "location") {
-      const lat = num(body.lat), lng = num(body.lng);
-      if (Math.abs(lat) > 90 || Math.abs(lng) > 180 || (lat === 0 && lng === 0)) return json({ error: "invalid_location", message: "Localização inválida." }, 400);
+      if (!canRecordLocation(row)) return json({error:"tracking_not_active",message:"Sem missão ativa para registrar localização."},409);
+      const coordinates = parseGpsCoordinates(body.lat, body.lng);
+      if (!coordinates) return json({ error: "invalid_location", message: "Localização inválida." }, 400);
+      const {lat,lng} = coordinates;
 
       const config = trackingConfig(courier);
       const metadata = object(courier.metadata);
       const previousLocation = object(metadata.last_location);
-      const previousAt = Date.parse(text(previousLocation.updated_at));
       const serverMinMs = Number(config.server_min_interval_seconds) * 1000;
-      if (Number.isFinite(previousAt) && previousAt > 0 && Date.now() - previousAt < serverMinMs) {
+      // O primeiro ponto de outra missão não herda o throttle do pedido anterior.
+      if (shouldThrottleGpsSample(previousLocation,missionId,Date.now(),serverMinMs)) {
         return json({ ok: true, skipped: true, reason: "server_throttle" });
       }
 
-      const visibleToCustomer = bool(body.visible_to_customer);
+      const visibleToCustomer = canExposeLocationToCustomer(row, bool(body.visible_to_customer));
       const location = {
+        order_id: missionId,
         lat,
         lng,
         accuracy: num(body.accuracy),
@@ -544,8 +604,10 @@ Deno.serve(async (req: Request) => {
         tracking_enabled: true,
         metadata: { ...metadata, current_order_id: missionId, last_location: location },
         updated_at: now,
-      }).eq("id", courier.id);
+      }).eq("id", courier.id).eq("updated_at",courier.updated_at).select("id").maybeSingle();
       if (courierUpdate.error) throw new Error(`courier_location_failed: ${courierUpdate.error.message}`);
+      if (!courierUpdate.data) return json({error:"mission_changed",
+        message:"A missão ou a permissão de rastreamento mudou. Atualize a entrega."},409);
 
       if (config.history_enabled) {
         const point = await admin.from("tracking_points").insert({
@@ -574,7 +636,7 @@ Deno.serve(async (req: Request) => {
         if (shouldMirror) {
           const orderUpdate = await admin.from("orders").update({
             raw_payload: { ...raw, up_location: location },
-          }).eq("id", missionId).eq("courier_id", courier.id);
+          }).eq("id", missionId).eq("courier_id", courier.id).eq("updated_at",row.updated_at).select("id").maybeSingle();
           if (orderUpdate.error) throw new Error(`order_location_failed: ${orderUpdate.error.message}`);
         }
       }

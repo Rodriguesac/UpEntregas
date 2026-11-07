@@ -4,9 +4,9 @@ import com.google.firebase.messaging.FirebaseMessagingService;
 import com.google.firebase.messaging.RemoteMessage;
 
 /**
- * Compatibilidade com FCM caso o projeto passe a usar push no futuro.
- * A V1.4 sem Blaze não depende deste serviço: o OnlineService escuta o Firestore
- * enquanto o entregador estiver explicitamente ONLINE.
+ * Recebe ofertas direcionadas via Firebase Cloud Messaging (data-only HTTP v1).
+ * O app continua consultando a fila Supabase como fallback; nenhuma notificação
+ * substitui a validação de identidade e disponibilidade na API do entregador.
  */
 public class UPMessagingService extends FirebaseMessagingService {
     @Override public void onNewToken(String token) {
@@ -26,8 +26,9 @@ public class UPMessagingService extends FirebaseMessagingService {
         String missionType = msg.getData().getOrDefault("missionType", msg.getData().getOrDefault("mission_type", routeId.isEmpty() ? "rides" : "rotas_entrega"));
         String targetDriver = msg.getData().getOrDefault("targetDriverId", "");
         String sessionDriver = Session.getDriverId(this);
-        if (!targetDriver.isEmpty() && !sessionDriver.isEmpty() && !targetDriver.equals(sessionDriver)) return;
+        if (!targetDriver.isEmpty() && (sessionDriver.isEmpty() || !targetDriver.equals(sessionDriver))) return;
 
+        if (rideId.isEmpty() && routeId.isEmpty()) return;
         String pedido = msg.getData().getOrDefault("codigoPedido", msg.getData().getOrDefault("numeroPedido", ""));
         if ("rotas_entrega".equals(missionType) || !routeId.isEmpty()) {
             String id = !routeId.isEmpty() ? routeId : rideId;
