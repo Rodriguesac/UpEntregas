@@ -13,6 +13,7 @@ on:
       - 'scripts/test-up-outbox-schema.mjs'
       - 'scripts/verify-up-postgres.sh'
       - 'scripts/test-up-worker-safety.mjs'
+      - 'scripts/test-up-status-relay.mjs'
       - 'bridge/**'
       - '.github/workflows/test-up-independence.yml'
   workflow_dispatch:
@@ -54,6 +55,7 @@ jobs:
           node scripts/test-up-relay-outbox.mjs
           node scripts/test-up-outbox-schema.mjs
           node scripts/test-up-worker-safety.mjs
+          node scripts/test-up-status-relay.mjs
       - name: Validar SQL em PostgreSQL descartável
         run: |
           if ! command -v psql >/dev/null 2>&1; then
