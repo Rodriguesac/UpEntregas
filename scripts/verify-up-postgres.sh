@@ -46,18 +46,18 @@ SELECT event_id,sequence,job_status,already_applied FROM public.up_job_advance(
 SELECT event_id,sequence,job_status,already_applied FROM public.up_job_advance(
  :'created_job_id'::uuid,'OFFERED','00000000-0000-4000-8000-000000000103'::uuid,'driver_api');
 -- A later event cannot jump ahead while callback 1 is still unacknowledged.
-DO $
+DO $upcheck$
 BEGIN
  IF (SELECT count(*) FROM public.up_status_callback_claim(5))<>0 THEN
   RAISE EXCEPTION 'Later event claimed before first delivery ACK';
  END IF;
-END $;
+END $upcheck$;
 SELECT public.up_status_callback_finish(:'cb_event'::uuid,:'cb_lease'::uuid,'ack') AS callback_acked;
 SELECT event_id AS next_event,lease_id AS next_lease,
  sequence AS next_seq FROM public.up_status_callback_claim(5) \gset
 SELECT public.up_status_callback_finish(:'next_event'::uuid,:'next_lease'::uuid,
  'retry','network_error') AS callback_retried;
-DO $
+DO $upcheck$
 DECLARE rejected boolean:=false;
 BEGIN
  BEGIN
@@ -68,7 +68,7 @@ BEGIN
   IF sqlerrm='invalid_job_transition' THEN rejected:=true; ELSE RAISE; END IF;
  END;
  IF NOT rejected THEN RAISE EXCEPTION 'Skipped unsafe delivery transition'; END IF;
-END $;
+END $upcheck$;
 RESET ROLE;
 DO $$
 BEGIN
