@@ -49,6 +49,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Verificar compilação das Edge Functions independentes (sem deploy)
+        run: |
+          deno check supabase/functions/driver-api-independent/index.ts
+          deno check supabase/functions/up-status-relay/index.ts
+          deno check supabase/functions/up-order-bridge/index.ts
       - name: Validar integração e isolamento sem acessar produção
         run: |
           node scripts/test-up-independence.mjs
