@@ -76,3 +76,22 @@ Foi testado em PostgreSQL 17 descartável um mecanismo de envio transacional da 
 - Testes reais com pedidos fictícios, notificações e rollback, antes do primeiro pedido de cliente.
 
 Verificar resultados em `https://github.com/Rodriguesac/UpEntregas/actions`.
+
+
+## Implementação do backend independente do entregador — 07/11/2026
+
+Arquivos adicionados, preparados **sem instalação em produção**:
+
+- `supabase/up-driver-operations.sql`: operações transacionais `up_driver_accept`, `up_driver_advance` e `up_driver_location` e tabela protegida `up_driver_devices`. O aceite exige oferta **destinada ao motorista e ainda válida**; a corrida não pode ser atribuída duas vezes. As etapas e códigos de confirmação são verificados no servidor. GPS fica no banco UP com bloqueio de atualizações excessivas.
+- `supabase/functions/driver-api-independent/index.ts`: Endpoint compatível com comandos do Android existente: `offer`, `mission`, `history`, `presence`, `telemetry`, `equipment`, `token`, `accept`, `reject`, `expire`, `stage`, `pickup`, `finish`, `location` e `occurrence`. Autentica Firebase JWT pela assinatura pública do Google e consulta apenas tabelas do UP.
+- `supabase/functions/driver-registration-independent/index.ts`: endpoint separado `submit`, `documents_update` e `status_sync`, com validação Firebase. O usuário pode apresentar e corrigir documentos, mas não consegue autoconceder o estado `APPROVED`.
+- `scripts/verify-up-driver-postgres.sh`: teste real PostgreSQL 17 de ofertas e bloqueio de outros entregadores, progressão sequencial da corrida, GPS, throttling e restrição de privilégios.
+- CI com `deno check` das funções e bateria de verificações de segurança dos endpoints.
+
+Última validação: https://github.com/Rodriguesac/UpEntregas/actions/runs/42404823722
+
+**Proteção de produção:** `UP_INDEPENDENT_DRIVER_ENABLED` e `UP_INDEPENDENT_REGISTRATION_ENABLED` precisam estar explicitamente em `true` para habilitar as novas funções. O APK atual segue utilizando `driver-api` legada e o banco anterior.
+
+**Dependências ainda abertas:** o novo Supabase não foi criado por limite de projetos gratuitos; o painel UP precisa migrar para o schema novo, e as permissões/gestão de revisão cadastral precisam ser finalizadas. Após provisionamento, testar o APK de ponta a ponta com usuários fictícios, Firebase, notificações, coleta, entrega, retorno à loja e rastreamento. Não distribuir APK apontando ao projeto independente antes desses testes.
+
+**Nota funcional:** o envelope atual do pedido transmite `collection_amount` (o que deve ser recebido no ato da entrega), não necessariamente o valor total da compra. O APK deve exibir os valores corretamente após validação financeira específica antes da virada.
