@@ -87,3 +87,18 @@ Apenas quando todos os itens abaixo forem **verdadeiros**:
 **Ainda pendente:** a fila deve ser integrada transacionalmente ao ato de encaminhar pedido no servidor da loja, o callback deve ser implantado com segredo privado e o UP novo deve emitir eventos numerados. Sem essas três etapas e sem o segundo projeto Supabase, os componentes acima são preparatórios e não estão servindo pedidos reais.
 
 **Bloqueio atual:** o Supabase recusou a criação de `up-entregas` por limite global de dois projetos gratuitos do proprietário, mesmo com cotação de US$ 0/mês. Esta conexão mostra apenas o projeto ativo da loja. Não pausar nem excluir projetos sem verificar a propriedade, uso atual e autorização explícita.
+
+
+## Etapa seguinte — retorno de status do UP à loja (07/11/2026)
+
+**Concluído e testado em ambiente descartável:**
+- `supabase/up-independent-schema.sql` recebeu funções `up_job_advance`, `up_status_callback_claim` e `up_status_callback_finish`, executáveis somente por `service_role`.
+- Cada mudança de estado gera um evento persistido, com sequência única por corrida e verificação das transições permitidas. Tentar entregar pulando etapas é rejeitado.
+- O evento de abertura `WAITING_DRIVER` permanece como sequência 1; status seguintes só podem ser transmitidos ao banco da loja após confirmação do anterior.
+- `supabase/functions/up-status-relay/index.ts` é o worker privado de retorno. Verifica o domínio diferente do projeto UP, HMAC, relógio, resposta da loja e reenvio/erro permanente. É **desativado por padrão** por `UP_STATUS_ENABLED`.
+- `scripts/test-up-status-relay.mjs` faz verificações de segurança da função; `scripts/verify-up-postgres.sh` comprova no PostgreSQL 17 as alterações de corrida, deduplicação, primeira confirmação, ordenação, retry e permissão.
+- [Testes concluídos com sucesso](https://github.com/Rodriguesac/UpEntregas/actions/runs/42356787980).
+
+**Para ativar no futuro, ainda são necessários:** provisionar o Supabase exclusivo, adaptar a API real de entregador para chamar `up_job_advance` após autenticação Firebase, implantar `up-status-receiver` na loja com segredo privado compartilhado, configurar `UP_STATUS_STORE_ENDPOINT` e `UP_STATUS_WORKER_TOKEN` no servidor UP, executar teste ponta a ponta e habilitar `UP_STATUS_ENABLED=true` somente após validação. O site do cliente precisará consumir o estado devolvido ao pedido; geolocalização continua exclusivamente no UP.
+
+A implementação acima **não foi aplicada a nenhum banco de produção**. O projeto `up-entregas` ainda não está disponível na conexão: o limite do plano gratuito continua bloqueando a criação.
