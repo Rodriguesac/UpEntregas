@@ -35,6 +35,40 @@ SELECT job_id,job_status,was_created FROM public.up_receive_handoff(
  '00000000-0000-4000-8000-000000000102'::uuid,
  repeat('a',64)
 );
+-- The UP callback starts with the initial WAITING_DRIVER event, sequence 1.
+SELECT id AS created_job_id FROM public.up_jobs
+ WHERE merchant_order_id='00000000-0000-4000-8000-000000000101'::uuid \gset
+SELECT event_id AS cb_event,lease_id AS cb_lease,sequence AS cb_seq,
+ status AS cb_status FROM public.up_status_callback_claim(5) \gset
+SELECT event_id,sequence,job_status,already_applied FROM public.up_job_advance(
+ :'created_job_id'::uuid,'OFFERED','00000000-0000-4000-8000-000000000103'::uuid,'driver_api');
+-- Repeating the same event ID is idempotent, even after the job already changed.
+SELECT event_id,sequence,job_status,already_applied FROM public.up_job_advance(
+ :'created_job_id'::uuid,'OFFERED','00000000-0000-4000-8000-000000000103'::uuid,'driver_api');
+-- A later event cannot jump ahead while callback 1 is still unacknowledged.
+DO $
+BEGIN
+ IF (SELECT count(*) FROM public.up_status_callback_claim(5))<>0 THEN
+  RAISE EXCEPTION 'Later event claimed before first delivery ACK';
+ END IF;
+END $;
+SELECT public.up_status_callback_finish(:'cb_event'::uuid,:'cb_lease'::uuid,'ack') AS callback_acked;
+SELECT event_id AS next_event,lease_id AS next_lease,
+ sequence AS next_seq FROM public.up_status_callback_claim(5) \gset
+SELECT public.up_status_callback_finish(:'next_event'::uuid,:'next_lease'::uuid,
+ 'retry','network_error') AS callback_retried;
+DO $
+DECLARE rejected boolean:=false;
+BEGIN
+ BEGIN
+  perform public.up_job_advance(
+    (select id from public.up_jobs limit 1),
+    'DELIVERED','00000000-0000-4000-8000-000000000104'::uuid,'driver_api');
+ EXCEPTION WHEN OTHERS THEN
+  IF sqlerrm='invalid_job_transition' THEN rejected:=true; ELSE RAISE; END IF;
+ END;
+ IF NOT rejected THEN RAISE EXCEPTION 'Skipped unsafe delivery transition'; END IF;
+END $;
 RESET ROLE;
 DO $$
 BEGIN
@@ -44,8 +78,25 @@ BEGIN
  IF (SELECT count(*) FROM public.up_job_events)<>1 THEN
   RAISE EXCEPTION 'Duplicate event inserted';
  END IF;
- IF (SELECT sequence FROM public.up_job_events LIMIT 1)<>1 THEN
-  RAISE EXCEPTION 'Initial event sequence incorrect';
+ IF (SELECT count(*) FROM public.up_job_events WHERE sequence=1
+   AND delivery_to_store_state='DELIVERED')<>1 THEN
+  RAISE EXCEPTION 'Initial event callback was not acknowledged';
+ END IF;
+ IF (SELECT count(*) FROM public.up_job_events WHERE sequence=2
+   AND delivery_to_store_state='RETRY' AND next_delivery_at>now())<>1 THEN
+  RAISE EXCEPTION 'Second callback was not scheduled for retry';
+ END IF;
+ IF (SELECT count(*) FROM public.up_job_events)<>2 THEN
+  RAISE EXCEPTION 'Duplicate or skipped delivery event inserted';
+ END IF;
+ IF (SELECT status FROM public.up_jobs LIMIT 1)<>'OFFERED' THEN
+  RAISE EXCEPTION 'Illegal driver transition altered the job';
+ END IF;
+ IF has_function_privilege('anon','public.up_status_callback_claim(integer)','EXECUTE') THEN
+  RAISE EXCEPTION 'Anonymous user can claim delivery callbacks';
+ END IF;
+ IF has_function_privilege('authenticated','public.up_job_advance(uuid,text,uuid,text)','EXECUTE') THEN
+  RAISE EXCEPTION 'App user can bypass driver API for transition';
  END IF;
  IF has_table_privilege('anon','public.up_jobs','SELECT') THEN
   RAISE EXCEPTION 'GPS/job tables exposed to anon';
