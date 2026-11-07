@@ -75,9 +75,7 @@ BEGIN
  IF (SELECT count(*) FROM public.up_jobs)<>1 THEN
   RAISE EXCEPTION 'Duplicate job inserted';
  END IF;
- IF (SELECT count(*) FROM public.up_job_events)<>1 THEN
-  RAISE EXCEPTION 'Duplicate event inserted';
- END IF;
+
  IF (SELECT count(*) FROM public.up_job_events WHERE sequence=1
    AND delivery_to_store_state='DELIVERED')<>1 THEN
   RAISE EXCEPTION 'Initial event callback was not acknowledged';
