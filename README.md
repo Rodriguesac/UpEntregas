@@ -1,5 +1,19 @@
 # UP Entregas 2.7 — Supabase operacional
 
+## UP Independente — nova infraestrutura em preparação
+
+O UP Entregas terá **banco exclusivo**, diferente do banco da Rodrigues Açaí e Cia. A conta proprietária do Supabase UP é outra conta: projeto `gkwmqwtktedarodvqqtn`.
+
+- Novo **UP Gestor** em `web-gestor-independente/`, com login Firebase e permissões por função.
+- **UP Gestor Android independente** em `gestor-independente/`, instala ao lado do app gestor antigo e carrega a interface com origem HTTPS protegida.
+- Novas APIs em `supabase/functions/*-independent/`, registro de corridas, entregadores, ofertas e rastreamento no banco exclusivo.
+- Emissão de ofertas pelo FCM, retorno de status à loja e mapa do cliente via ticket temporário.
+- **Instalador manual para o novo Supabase**, sem tocar no projeto da loja: `.github/workflows/deploy-up-independent.yml`.
+- [Manual de ativação do projeto em outra conta](docs/ATIVAR-UP-NOVA-CONTA.md).
+- [Baixar UP Gestor Independente — APK de prévia](https://github.com/Rodriguesac/UpEntregas/releases/download/up-gestor-independent-preview/UP-Gestor-Independente-Previa.apk).
+
+**Importante:** até instalação de SQL e Functions no novo Supabase, o painel e o APK independente permanecem desativados. O UP antigo continua operacional. Não confundir o APK de prévia com produção liberada.
+
 Aplicativo Android nativo do entregador do ecossistema Rodrigues Açaí e Cia / UP Entregas.
 
 ## Versão
