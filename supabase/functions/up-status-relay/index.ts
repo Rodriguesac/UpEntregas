@@ -21,10 +21,11 @@ function equalToken(left:string,right:string){
 function validatedShopEndpoint(endpoint:string,upUrl:string){
  let dest:URL,up:URL;
  try{dest=new URL(endpoint);up=new URL(upUrl)}catch{throw Error("invalid_store_endpoint")}
+ const sameHost=dest.hostname===up.hostname;
  if(dest.protocol!=="https:"||
   dest.hostname!=="fdqqwdplprzpqufpgdrm.supabase.co"||
   up.hostname!=="gkwmqwtktedarodvqqtn.supabase.co"||
-  dest.hostname===up.hostname||dest.pathname!=="/functions/v1/up-status-receiver"||
+  sameHost||dest.pathname!=="/functions/v1/up-status-receiver"||
   dest.username||dest.password||dest.search||dest.hash)
   throw Error("invalid_store_endpoint");
  return dest.href;
