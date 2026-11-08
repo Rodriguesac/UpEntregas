@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b1632">
+<title>UP Gestor • Operação Independente</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="configuration" class="cover hidden" role="status">
+  <div class="login-panel">
+    <div class="brand-logo">UP</div><h1>UP Gestor</h1>
+    <p>O painel independente está preparado. A conexão será habilitada quando o banco exclusivo do UP for configurado.</p>
+    <div class="info-note">As entregas em andamento continuam no sistema atual. Nenhum dado da loja será alterado.</div>
+  </div>
+</div>
+<section id="login" class="cover hidden">
+  <form id="loginForm" class="login-panel" autocomplete="on">
+    <div class="brand-logo">UP</div><h1>UP Gestor</h1>
+    <p>Entre com sua conta de administrador autorizada no UP Entregas.</p>
+    <label for="email">E-mail</label>
+    <input id="email" type="email" autocomplete="username" required class="field" placeholder="seuemail@exemplo.com">
+    <label for="password">Senha</label>
+    <input id="password" type="password" autocomplete="current-password" required class="field" placeholder="Sua senha">
+    <button id="loginButton" type="submit" class="button primary block">Entrar no UP Gestor</button>
+    <p id="loginError" class="error" role="alert" aria-live="polite"></p>
+    <small>O acesso exige conta Firebase e autorização administrativa no banco do UP.</small>
+  </form>
+</section>
+<div id="app" class="app hidden">
+  <aside class="sidebar">
+    <div class="side-head"><span class="brand-logo small">UP</span><div><strong>UP Entregas</strong><small>Central de operações</small></div></div>
+    <div class="side-section">OPERAÇÃO</div>
+    <nav id="sideNav" class="side-nav" aria-label="Navegação principal"></nav>
+    <div class="side-foot"><div id="signedUser" class="signed-user"></div><button class="button ghost" data-action="logout">Sair da conta</button></div>
+  </aside>
+  <div class="layout">
+    <header class="topbar">
+      <div class="title-wrap"><div class="eyebrow">UP ENTREGAS • GESTÃO INDEPENDENTE</div><h1 id="pageTitle">Visão geral</h1></div>
+      <span id="connection" class="connection">Conectado</span>
+      <button id="refresh" class="button secondary" type="button" data-action="refresh"><span aria-hidden="true">↻</span> Atualizar</button>
+    </header>
+    <main id="main" class="main" tabindex="-1">
+      <div class="loading-block">Carregando operações…</div>
+    </main>
+  </div>
+  <nav id="bottomNav" class="bottom-nav" aria-label="Navegação no celular"></nav>
+</div>
+<div id="dialogBackdrop" class="dialog-backdrop hidden" role="presentation">
+  <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialogTitle">
+    <header class="dialog-head"><h2 id="dialogTitle">Confirmar</h2><button type="button" class="button icon-button" data-action="close-dialog" aria-label="Fechar">×</button></header>
+    <div id="dialogContent" class="dialog-content"></div>
+    <footer id="dialogActions" class="dialog-actions"></footer>
+  </section>
+</div>
+<div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+<script src="config.js"></script>
+<script src="app.js" defer></script>
+</body>
+</html>
