@@ -183,7 +183,7 @@ Deno.serve(async req=>{
   if(action==="payout_request"){
    authorizeRole(role,privateRoles);
    const amount=money(body.amount);
-   if(!Number.isFinite(amount)||amount<=0||Math.round(amount*100)!==amount*100)
+   if(!Number.isFinite(amount)||amount<=0||Math.abs(Math.round(amount*100)-amount*100)>0.000001)
     return fail(origin,422,"invalid_amount");
    const r=await db.rpc("up_manager_request_payout",{
     p_courier:id(body.courier_id),p_amount:amount,p_manager:uid
