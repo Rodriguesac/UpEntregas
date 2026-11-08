@@ -1,0 +1,43 @@
+name: Empacotar UP Gestor Independente Android
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'gestor-independente/**'
+      - 'web-gestor-independente/**'
+      - 'settings.gradle'
+      - '.github/workflows/build-up-gestor-independent.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Instalar SDK Android 35
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Compilar app separado do gestor
+        run: gradle :gestor-independente:assembleDebug --stacktrace
+      - name: Preparar APK de prévia
+        run: cp gestor-independente/build/outputs/apk/debug/gestor-independente-debug.apk UP-Gestor-Independente-Previa.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: UP-Gestor-Independente-APK
+          path: UP-Gestor-Independente-Previa.apk
+          if-no-files-found: error
