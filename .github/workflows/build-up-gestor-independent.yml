@@ -25,7 +25,9 @@ jobs:
           distribution: temurin
           java-version: '17'
       - name: Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ''
       - name: Instalar SDK Android 35
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
       - name: Gradle
