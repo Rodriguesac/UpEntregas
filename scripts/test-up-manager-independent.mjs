@@ -72,4 +72,8 @@ assert.ok(app.includes('"apikey":CONFIG.publishableKey'),"API must send only the
 assert.ok(app.includes("url.hostname===project.hostname"),"API hostname must match its configured UP project");
 assert.ok(!/SERVICE_ROLE_KEY|UP_BRIDGE_SECRET/.test(config),
  "No private key in web configuration");
+assert.ok(api.includes('action==="integration_health"'),"Manager integration diagnostics must exist");
+assert.ok(api.includes('authorizeRole(role,privateRoles);'),"Diagnostics require an administrator role");
+assert.ok(!api.includes("value:Deno.env.get("),"Never expose secrets as response fields");
+assert.ok(app.includes('function renderIntegrations()')&&app.includes('integration_health'),"Manager UI must display diagnostics");
 console.log("PASS UP Gestor: Firebase JWT, roles, RLS, review, offerings, payments, mobile UI and secret hygiene");

@@ -66,6 +66,32 @@ Deno.serve(async req=>{
   const action=txt(body?.action).toLowerCase();
   const own={id:uid,role,name:txt(actor.data.display_name)};
   if(action==="bootstrap")return reply(origin,{ok:true,user:own});
+  // Sensitive readiness state is visible only AFTER verified Firebase manager JWT + server allowlist.
+  if(action==="integration_health"){
+   authorizeRole(role,privateRoles);
+   const configured=(name:string,min=1)=>txt(Deno.env.get(name)).length>=min;
+   const enabled=(name:string)=>Deno.env.get(name)==="true";
+   const checks=[
+    {id:"bridge",label:"Assinatura dos pedidos",ready:configured("UP_BRIDGE_SECRET",32)},
+    {id:"tracking",label:"Assinatura de GPS",ready:configured("UP_TRACKING_SECRET",32)},
+    {id:"status_endpoint",label:"Destino de retorno à loja",ready:txt(Deno.env.get("UP_STATUS_STORE_ENDPOINT"))==="https://fdqqwdplprzpqufpgdrm.supabase.co/functions/v1/up-status-receiver"},
+    {id:"status_worker",label:"Autorização do retorno",ready:configured("UP_STATUS_WORKER_TOKEN",32)},
+    {id:"manager_origin",label:"Domínio permitido do painel",ready:txt(Deno.env.get("UP_MANAGER_ALLOWED_ORIGINS")).split(",").some(s=>s.trim().startsWith("https://"))},
+    {id:"firebase",label:"Identidade Firebase",ready:txt(Deno.env.get("UP_FIREBASE_PROJECT_ID"))==="rodrigues-d6566"},
+    {id:"customer_origin",label:"Domínio permitido do cliente",ready:txt(Deno.env.get("UP_CUSTOMER_ALLOWED_ORIGINS")).split(",").some(s=>s.trim()==="https://rodriguesacaiecia.web.app")},
+    {id:"fcm",label:"Serviço de notificações",ready:configured("UP_FCM_SERVICE_ACCOUNT_JSON",50)&&configured("UP_PUSH_WORKER_TOKEN",32)}
+   ];
+   const flags=[
+    {id:"manager",label:"UP Gestor",enabled:enabled("UP_INDEPENDENT_MANAGER_ENABLED")},
+    {id:"driver",label:"Corridas no Android",enabled:enabled("UP_INDEPENDENT_DRIVER_ENABLED")},
+    {id:"registration",label:"Cadastro independente",enabled:enabled("UP_INDEPENDENT_REGISTRATION_ENABLED")},
+    {id:"relay",label:"Status para loja",enabled:enabled("UP_STATUS_ENABLED")},
+    {id:"customer",label:"GPS para cliente",enabled:enabled("UP_CUSTOMER_TRACKING_ENABLED")},
+    {id:"push",label:"Ofertas FCM",enabled:enabled("UP_PUSH_ENABLED")}
+   ];
+   return reply(origin,{ok:true,checks,flags,note:"Credenciais nunca são exibidas; configuração da loja deve ser validada separadamente."});
+  }
+
   if(action==="dashboard"){
    const [jobs,couriers,applications,payouts]=await Promise.all([
     db.from("up_jobs").select("id,status,assigned_courier_id").limit(1000),

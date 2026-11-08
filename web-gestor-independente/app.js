@@ -12,7 +12,8 @@ const MENU=[
  {id:"applications",label:"Cadastros",icon:"▣",desc:"Análise e aprovação"},
  {id:"finance",label:"Financeiro",icon:"◈",desc:"Saldos e repasses registrados"},
  {id:"occurrences",label:"Ocorrências",icon:"⚑",desc:"Registros da operação"},
- {id:"audit",label:"Auditoria",icon:"▥",desc:"Histórico administrativo"}
+ {id:"audit",label:"Auditoria",icon:"▥",desc:"Histórico administrativo"},
+ {id:"integrations",label:"Integrações",icon:"⌁",desc:"Verificação segura dos serviços"}
 ];
 const MOBILE=["overview","jobs","couriers","more"];
 const LABELS={
@@ -152,8 +153,8 @@ async function login(event){
  }finally{button.disabled=false;button.textContent="Entrar no UP Gestor";}
 }
 function navigation(){
- const pages=MENU.filter(x=>(x.id!=="finance"&&x.id!=="audit")||
-   (x.id==="finance"?isManager():STORE.user?.role==="OWNER"));
+ const pages=MENU.filter(x=>["finance","audit","integrations"].includes(x.id)?
+   (x.id==="audit"?STORE.user?.role==="OWNER":isManager()):true);
  $("#sideNav").innerHTML=pages.map(x=>'<button type="button" data-action="go" data-page="'+x.id+'" '+
   'class="'+(STORE.page===x.id?"active":"")+'"><span class="nav-icon">'+x.icon+
   '</span>'+x.label+'</button>').join("");
@@ -170,7 +171,7 @@ function navigation(){
 async function navigate(next,reload=true){
  if(!allowedIds.has(next))return;
  if(next==="audit"&&STORE.user?.role!=="OWNER")return;
- if(next==="finance"&&!isManager())return;
+ if(["finance","integrations"].includes(next)&&!isManager())return;
  STORE.page=next;
  navigation();
  if(next==="more"){renderMore();return;}
@@ -182,7 +183,7 @@ async function load(page=STORE.page){
  $("#connection").textContent="Atualizando";$("#connection").classList.remove("offline");
  $("#main").innerHTML='<div class="loading-block">Carregando dados do UP…</div>';
  const calls={overview:"dashboard",jobs:"jobs_list",couriers:"couriers_list",
-  applications:"applications_list",finance:"finance",occurrences:"occurrences",audit:"audit"};
+  applications:"applications_list",finance:"finance",occurrences:"occurrences",audit:"audit",integrations:"integration_health"};
  try{
   STORE.data[page]=await call(calls[page]);
   render();
@@ -303,10 +304,24 @@ function renderAudit(){
  '</td><td>'+escapeHtml(x.actor)+'</td><td>'+escapeHtml(x.entity_id||"—")+'</td></tr>').join("")||empty("Nenhum evento administrativo."))+
  '</tbody></table></div>';
 }
+function renderIntegrations(){
+ const info=STORE.data.integrations||{};
+ const checks=Array.isArray(info.checks)?info.checks:[];
+ const flags=Array.isArray(info.flags)?info.flags:[];
+ const renderEntry=(label,active,readyLabel,waitingLabel)=>
+  '<article class="record"><div class="record-head"><h3>'+escapeHtml(label||"Integração")+
+  '</h3><span class="pill '+(active?"good":"wait")+'">'+(active?readyLabel:waitingLabel)+'</span></div></article>';
+ $("#main").innerHTML='<p class="page-intro">Diagnóstico exclusivo do administrador. Segredos não são mostrados, e a configuração do banco da loja deve ser validada separadamente.</p>'+
+ '<div class="section-head"><h2>Integrações privadas</h2></div><div class="record-grid">'+
+ (checks.map(x=>renderEntry(x.label,x.ready===true,"Configurado","Pendente")).join("")||empty("Nenhuma integração listada."))+'</div>'+
+ '<div class="section-head"><h2>Ativação operacional</h2></div><div class="record-grid">'+
+ (flags.map(x=>renderEntry(x.label,x.enabled===true,"Habilitado","Desativado")).join("")||empty("Nenhum recurso listado."))+'</div>'+
+ '<div class="warning-note">A ativação técnica não comprova uma entrega real. O lançamento exige validação do Android, autorização dos entregadores, pagamento e callback à loja.</div>';
+}
 function renderMore(){
  $("#main").innerHTML='<p class="page-intro">Cada função administrativa está organizada na área correspondente.</p>'+
  '<div class="more-grid">'+MENU.filter(x=>!["overview","jobs","couriers"].includes(x.id)&&
-  (x.id!=="finance"||isManager())&&(x.id!=="audit"||STORE.user?.role==="OWNER"))
+  (!["finance","integrations"].includes(x.id)||isManager())&&(x.id!=="audit"||STORE.user?.role==="OWNER"))
  .map(x=>'<button class="more-card" data-action="go" data-page="'+x.id+'">'+
   x.icon+" "+x.label+"<span>"+escapeHtml(x.desc)+'</span></button>').join("")+
  '<button class="more-card" data-action="logout">Sair da conta<span>Encerrar sessão administrativa</span></button></div>';
@@ -319,6 +334,7 @@ function render(){
  else if(STORE.page==="finance")renderFinance();
  else if(STORE.page==="occurrences")renderOccurrences();
  else if(STORE.page==="audit")renderAudit();
+ else if(STORE.page==="integrations")renderIntegrations();
  else renderMore();
 }
 function closeDialog(){
