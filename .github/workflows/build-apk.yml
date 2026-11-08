@@ -4,8 +4,24 @@ on:
   workflow_dispatch:
   push:
     branches: [ main ]
+    paths:
+      - 'app/**'
+      - 'gestor/**'
+      - 'web-gestor/**'
+      - 'build.gradle'
+      - 'settings.gradle'
+      - 'gradle.properties'
+      - '.github/workflows/build-apk.yml'
   pull_request:
     branches: [ main ]
+    paths:
+      - 'app/**'
+      - 'gestor/**'
+      - 'web-gestor/**'
+      - 'build.gradle'
+      - 'settings.gradle'
+      - 'gradle.properties'
+      - '.github/workflows/build-apk.yml'
 
 permissions:
   contents: write
