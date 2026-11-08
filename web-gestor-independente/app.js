@@ -326,7 +326,7 @@ function dialog(title,html,okLabel,onSave){
  if(onSave)$("#dialogSave").onclick=async()=>{
   const btn=$("#dialogSave");if(btn.disabled)return;
   btn.disabled=true;btn.textContent="Salvando…";
-  try{await onSave();closeDialog();}
+  try{const saved=await onSave();if(saved!==false)closeDialog();}
   catch(e){notice(e.message,true)}
   finally{btn.disabled=false;btn.textContent=okLabel||"Salvar";}
  };
@@ -361,7 +361,7 @@ async function offerDialog(jobId){
  '<option value="10">10 minutos</option></select>',
  "Enviar oferta",async()=>{
   const id=$("#offerCourier").value,mins=Number($("#offerMinutes").value);
-  if(!confirm("Enviar esta corrida para o entregador escolhido?"))return;
+  if(!confirm("Enviar esta corrida para o entregador escolhido?"))return false;
   await call("send_offer",{job_id:jobId,courier_id:id,minutes:mins});
   notice("Oferta registrada no UP.");
   await load("jobs");
@@ -388,7 +388,7 @@ async function reviewDialog(appId){
  'Salvar decisão',async()=>{
   const decision=$("#reviewDecision").value,reason=$("#reviewReason").value.trim();
   if(decision!=="APPROVED"&&reason.length<5)throw Error("Informe o motivo com pelo menos 5 caracteres.");
-  if(!confirm("Registrar esta decisão sobre o cadastro?"))return;
+  if(!confirm("Registrar esta decisão sobre o cadastro?"))return false;
   await call("review_application",{application_id:appId,decision,reason});
   notice("Situação do cadastro atualizada.");await load("applications");
  });
@@ -412,7 +412,7 @@ function payoutDialog(id){
  "Registrar solicitação",async()=>{
   const amount=Number($("#payoutAmount").value.trim().replace(",","."));
   if(!Number.isFinite(amount)||amount<=0)throw Error("Informe um valor positivo.");
-  if(!confirm("Registrar a solicitação de repasse de "+money(amount)+"?"))return;
+  if(!confirm("Registrar a solicitação de repasse de "+money(amount)+"?"))return false;
   await call("payout_request",{courier_id:id,amount});
   notice("Solicitação registrada. Nenhum Pix foi enviado.");await load("finance");
  });
@@ -425,7 +425,7 @@ function confirmPayout(id){
  'Registrar como pago',async()=>{
   const reference=$("#paymentReference").value.trim();
   if(reference.length<5)throw Error("Informe a referência do pagamento.");
-  if(!confirm("Você confirma que este repasse já foi pago?"))return;
+  if(!confirm("Você confirma que este repasse já foi pago?"))return false;
   await call("payout_confirm",{payout_id:id,reference});
   notice("Pagamento registrado no UP.");await load("finance");
  });
