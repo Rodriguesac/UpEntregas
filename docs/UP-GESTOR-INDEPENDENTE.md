@@ -65,3 +65,18 @@ O GADMINISTRA cuida de **pedido, pagamento e preparo**. O **UP Gestor** cuida de
 O workflow `Validar arquitetura UP independente` verifica o TypeScript das Edge Functions com Deno, a sintaxe do JavaScript do navegador e executa as funções SQL e cenários de segurança em PostgreSQL 17 descartável. O ZIP `UP-Gestor-Independente-Previa` pode ser obtido na página da execução do GitHub Actions.
 
 **Não interpretar testes de código como teste de ponta a ponta de Firebase, notificações, cobrança ou rastreamento em produção.** A criação do projeto próprio permanece o bloqueio para esse tipo de validação.
+
+
+## Novo projeto informado para ativação — 08/11/2026
+
+- **Referência Supabase UP:** `gkwmqwtktedarodvqqtn`.
+- **URL pública:** `https://gkwmqwtktedarodvqqtn.supabase.co`.
+- A chave **publishable** recebida do proprietário está registrada **somente** na configuração pública de pré-ativação `web-gestor-independente/config.js`. Não confundir com `service_role`; não lhe concede acesso administrativo.
+- Chave pública do Firebase pré-preenchida a partir de `app/google-services.json` do projeto `rodrigues-d6566`. **O uso desta chave no login web ainda precisa ser testado**, pois podem existir restrições para Android.
+- `enabled:false` mantém o painel **inativo** até a instalação e a validação das funções no projeto novo.
+- Para autenticar com Supabase no ChatGPT, autorizar a **conta e organização que possuem o projeto acima**. Em 08/11 a conexão administrativa existente lista somente `fdqqwdplprzpqufpgdrm` (banco da loja); a consulta direta ao novo projeto foi recusada por falta de permissão.
+- **Nenhuma migration, tabela, Edge Function, segredo privado ou usuário administrador foi criado no projeto novo**; também não houve mudança no banco antigo nem no APK.
+
+Após conceder acesso administrativo, aplicar scripts SQL na ordem documentada, implantar Edge Functions com validação Firebase interna, configurar origins e segredo privado, inserir o primeiro administrador por UID verificado, validar login web, oferta e aceite, e só depois trocar a infraestrutura usada pelos entregadores.
+
+Validação pré-ativação: [CI GitHub Actions #42461410122](https://github.com/Rodriguesac/UpEntregas/actions/runs/42461410122) — Deno, PostgreSQL descartável, frontend e pacote de prévia passaram.
