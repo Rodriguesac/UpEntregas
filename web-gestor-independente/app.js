@@ -103,6 +103,7 @@ async function call(action,extra={}){
     invalid_firebase_token:"Sessão expirada. Entre novamente.",
     insufficient_permissions:"Seu perfil não tem permissão para esta ação.",
     courier_not_available:"Entregador indisponível ou não aprovado.",
+    courier_busy:"Este entregador já possui uma corrida ativa.",
     job_unavailable:"Corrida não está disponível para oferta.",
     job_already_offered:"Esta corrida já tem uma oferta ativa.",
     driver_has_active_job:"Há uma corrida ativa com este entregador.",
