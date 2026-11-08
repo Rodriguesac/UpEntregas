@@ -1,5 +1,31 @@
 # UP Entregas Independente — estado verificado de implantação
 
+## Atualização operacional — 08/11/2026
+
+- **Migração parcial aplicada, sem interrupção:** 3 registros de `public.couriers` e 2 candidaturas de `public.courier_applications` foram copiados do Supabase Primary para o UpEntrega. Todos permanecem `PENDING`; entregadores ficaram `online=false`. 2 candidaturas coincidem com Firebase UIDs já migrados. Não houve migração de GPS, documentos, CPF, Pix ou histórico de corridas. Os registros originais não foram alterados.
+- **Aprovação ainda obrigatória:** o UP Gestor agora exige confirmação explícita para aprovar entregador importado. A documentação original deve ser conferida antes da ativação. O sistema continua sem administrador autorizado em `up_manager_users` e não libera corridas reais.
+- **Gestor aprimorado:** aba "Integrações" adicionada com diagnóstico somente para `OWNER`/`ADMIN` com JWT Firebase verificado e allowlist. Retorna apenas indicadores booleanos; nenhum segredo ou token.
+- **Backend publicado:** `up-manager-independent` v2 com diagnóstico privado de configuração. As funções de operação continuam protegidas pelas flags.
+- **GPS privado:** função `up_prune_stale_location_data(7)` instalada somente no UP; acessível apenas via service role, remove pontos antigos de corridas encerradas (sem tocar em corridas ativas). **Ainda não foi agendada nem executada na operação.**
+- **Android:** [PR #6 — preparação do APK independente](https://github.com/Rodriguesac/UpEntregas/pull/6) criada como rascunho; nenhuma APK independente foi promovida à distribuição.
+- **Validação:** o teste de corrida completa, oferta, GPS e retorno já havia passado em transação revertida. Novos testes automáticos do UP Gestor e proteção de GPS adicionados ao GitHub Actions. Verificar o status das execuções antes de publicar.
+- **Workflow antigo:** um workflow auto-modificador de cadastros foi aposentado e seu conteúdo foi arquivado em `docs/legacy`; o Gestor legado permanece inalterado.
+
+### Bloqueios para virada de produção
+
+1. Credenciais de Edge Functions no Supabase da loja e do UP e agendamentos autenticados.
+2. Confirmação do UID Firebase real do responsável e inclusão na allowlist `up_manager_users`; ativação administrativa gradual.
+3. Publicação da API independente de inscrição de motoristas, anteriormente bloqueada pela ferramenta; não contornar restrições de segurança.
+4. Conferência manual de documentos e aprovação dos motoristas migrados.
+5. Build Android independente, validação de assinatura e atualização controlada; push FCM.
+6. Rastreio de GPS no site somente com ticket temporário assinado e flags configuradas.
+7. Validação ponta a ponta real (pagamento confirmado, pedido pronto, despacho, evento assinado, retorno à loja), sem alteração dos clientes existentes.
+
+**Nenhuma flag de tráfego real foi habilitada.** A operação antiga permanece a fonte de verdade até a virada aprovada.
+
+---
+
+
 Data: **08 de novembro de 2026**. Fonte principal do código: `Rodriguesac/UpEntregas` (branch `main`).
 Destino único: projeto Supabase **UpEntrega** — `gkwmqwtktedarodvqqtn` (conta **NOVA ANDRADINA**).
 A loja permanece no `fdqqwdplprzpqufpgdrm` (**Primary**).
