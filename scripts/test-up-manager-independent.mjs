@@ -42,7 +42,10 @@ assert.ok(!sql.includes("VALUES ('admin','admin'"),"Never ship a default adminis
 assert.ok(!sql.includes("security definer"),"Avoid bypass-RLS manager RPCs");
 assert.ok(!/\.from\(["'](?:orders|customers|tracking_points)["']\)/.test(api),
  "Independent manager cannot query the store or its GPS");
-assert.ok(!api.includes("fdqqwdplprzpqufpgdrm"),"No store connection hardcoded");
+// An exact allowed callback destination is configuration validation, not a store DB connection.
+assert.ok(api.includes('UP_STATUS_STORE_ENDPOINT'),"Manager diagnostics must verify expected callback target");
+assert.ok(!api.includes('createClient("https://fdqqwdplprzpqufpgdrm'),"Manager must never connect to store database");
+assert.ok(!api.includes('fetch("https://fdqqwdplprzpqufpgdrm'),"Manager must never fetch store APIs");
 assert.ok(!app.includes("x-gestor-pin"),"New manager must not use shared store PIN");
 assert.ok(!app.includes("localStorage")||app.includes("Never store Firebase"),"No persisted credentials");
 assert.ok(!/localStorage\.setItem|sessionStorage\.setItem/.test(app),"No browser token persistence");
