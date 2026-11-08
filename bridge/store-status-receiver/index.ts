@@ -31,6 +31,8 @@ function stage(status:string){
 }
 Deno.serve(async(req:Request)=>{
  if(req.method!=="POST")return reply(405,{ok:false,error:"method_not_allowed"});
+ if(Deno.env.get("UP_STATUS_CALLBACK_ENABLED")!=="true")
+  return reply(503,{ok:false,error:"independent_callback_disabled"});
  if(req.headers.has("origin"))return reply(403,{ok:false,error:"server_to_server_only"});
  const url=Deno.env.get("SUPABASE_URL"),service=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
  const secret=Deno.env.get("UP_BRIDGE_SECRET");
