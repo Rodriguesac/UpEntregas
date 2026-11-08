@@ -63,6 +63,11 @@ BEGIN
   RAISE EXCEPTION 'Offer transition events not recorded';END IF;
 END $mgr$;
 
+-- Driver accepts a real pending UP offer; suspension must then fail.
+SELECT job_status FROM public.up_driver_accept(
+ :'managed_job'::uuid,:'new_courier_id'::uuid,
+ (select id from public.up_dispatch_offers where job_id=:'managed_job'::uuid
+  and status='PENDING' limit 1));
 INSERT INTO public.up_wallet_transactions(courier_id,kind,amount,description)
 VALUES(:'new_courier_id'::uuid,'CREDIT',50,'Teste crédito em carteira');
 
@@ -86,7 +91,7 @@ SELECT public.up_manager_confirm_payout(
  :'payout_id'::uuid,'firebase-owner-test','MANUAL-RECEIPT-EXAMPLE') AS paid_replay;
 DO $mgr$
 BEGIN
- IF (SELECT status FROM public.up_payouts WHERE id=:'payout_id'::uuid)<>'PAID' THEN
+ IF (SELECT count(*) FROM public.up_payouts WHERE status='PAID' AND payment_reference='MANUAL-RECEIPT-EXAMPLE')<>1 THEN
   RAISE EXCEPTION 'Manual payout confirmation not recorded';END IF;
  IF (SELECT count(*) FROM public.up_audit_log WHERE action='payout_recorded_paid')<>1 THEN
   RAISE EXCEPTION 'Duplicate paid audit';END IF;
@@ -96,13 +101,14 @@ DECLARE denied boolean:=false;
 BEGIN
  BEGIN
   perform public.up_manager_set_driver_state(
-   '00000000-0000-4000-8000-000000000701','SUSPENDED','firebase-owner-test');
+   (select id from public.up_couriers where firebase_uid='new-driver-test'),
+   'SUSPENDED','firebase-owner-test');
  EXCEPTION WHEN OTHERS THEN
   IF sqlerrm='driver_has_active_job' THEN denied:=true;ELSE RAISE;END IF;
  END;
  IF NOT denied THEN RAISE EXCEPTION 'Driver with an active ride could be suspended';END IF;
 END $mgr$;
-SELECT public.up_manager_set_driver_state(:'new_courier_id'::uuid,
+SELECT public.up_manager_set_driver_state('00000000-0000-4000-8000-000000000701'::uuid,
  'SUSPENDED','firebase-owner-test') AS suspended;
 RESET ROLE;
 
