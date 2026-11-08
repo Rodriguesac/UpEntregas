@@ -27,6 +27,8 @@ on:
       - 'scripts/test-up-manager-independent.mjs'
       - 'scripts/verify-up-manager-postgres.sh'
       - 'scripts/verify-up-driver-postgres.sh'
+      - 'scripts/verify-up-e2e.sh'
+      - 'scripts/verify-up-e2e.sql'
       - 'bridge/**'
       - '.github/workflows/test-up-independence.yml'
   workflow_dispatch:
@@ -94,6 +96,7 @@ jobs:
           bash scripts/verify-up-postgres.sh
           bash scripts/verify-up-driver-postgres.sh
           bash scripts/verify-up-manager-postgres.sh
+          bash scripts/verify-up-e2e.sh
       - name: Empacotar novo painel do UP (sem publicar)
         uses: actions/upload-artifact@v4
         with:
