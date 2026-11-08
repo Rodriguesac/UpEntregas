@@ -32,6 +32,8 @@ on:
       - 'scripts/verify-up-driver-postgres.sh'
       - 'scripts/verify-up-e2e.sh'
       - 'scripts/verify-up-e2e.sql'
+      - 'scripts/verify-up-gps-retention.sql'
+      - 'supabase/up-gps-retention.sql'
       - 'bridge/**'
       - '.github/workflows/test-up-independence.yml'
   workflow_dispatch:
