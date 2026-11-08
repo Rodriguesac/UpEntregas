@@ -98,6 +98,11 @@ begin
  if not found or courier.state<>'APPROVED' or courier.online is distinct from true then
   raise exception 'courier_not_available';
  end if;
+ if exists(select 1 from public.up_jobs j
+   where j.assigned_courier_id=p_courier
+   and j.status not in ('DELIVERED','CANCELLED','FAILED')) then
+  raise exception 'courier_busy';
+ end if;
  update public.up_dispatch_offers o set status='EXPIRED',responded_at=now()
   where o.job_id=p_job and o.status='PENDING' and o.expires_at<=now();
  select * into prior from public.up_dispatch_offers o
@@ -131,6 +136,9 @@ declare wanted text:=upper(trim(coalesce(p_state,'')));
 begin
  if p_courier is null or wanted not in ('APPROVED','SUSPENDED') or
     length(trim(coalesce(p_manager,'')))<5 then raise exception 'invalid_driver_state';end if;
+ -- Lock driver BEFORE checking jobs, synchronizing with driver acceptance.
+ perform 1 from public.up_couriers c where c.id=p_courier for update;
+ if not found then return false;end if;
  if exists(select 1 from public.up_jobs j where j.assigned_courier_id=p_courier
   and j.status not in ('DELIVERED','CANCELLED','FAILED')) then
    raise exception 'driver_has_active_job';
