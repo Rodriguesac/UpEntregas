@@ -66,7 +66,7 @@ END $mgr$;
 
 -- New offer automatically enqueues an FCM message, exactly once.
 SELECT notification_id AS push_id,lease_id AS push_lease
- FROM public.up_offer_push_claim(5) \\gset
+ FROM public.up_offer_push_claim(5) \gset
 SELECT public.up_offer_push_finish(
  :'push_id'::uuid,:'push_lease'::uuid,'sent',null) AS pushed;
 DO $mgr$
