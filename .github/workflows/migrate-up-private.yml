@@ -1,0 +1,59 @@
+name: Migrar entregadores e financeiro ao UP independente (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_project_ref:
+        description: 'Projeto UP independente de destino'
+        required: true
+        type: string
+      dry_run:
+        description: 'Simular apenas: sem escrita no Supabase novo'
+        required: true
+        type: boolean
+        default: true
+      approval:
+        description: 'Para gravar, digite AUTORIZO-MIGRAR-UP'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: migrate-up-private
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    if: ${{ inputs.target_project_ref == 'gkwmqwtktedarodvqqtn' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      UP_OLD_SERVICE_ROLE: ${{ secrets.UP_OLD_SERVICE_ROLE }}
+      UP_NEW_SERVICE_ROLE: ${{ secrets.UP_NEW_SERVICE_ROLE }}
+      UP_TARGET_PROJECT_REF: gkwmqwtktedarodvqqtn
+      UP_MIGRATION_DRY_RUN: ${{ inputs.dry_run }}
+      UP_MIGRATION_APPROVED: ${{ !inputs.dry_run && inputs.approval == 'AUTORIZO-MIGRAR-UP' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validar explicitamente a migração
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$UP_TARGET_PROJECT_REF" = "gkwmqwtktedarodvqqtn"
+          if [ "$UP_MIGRATION_DRY_RUN" = "false" ] && [ "$UP_MIGRATION_APPROVED" != "true" ]; then
+            echo "A gravação exige AUTORIZO-MIGRAR-UP e dry_run=false. Nada alterado."
+            exit 1
+          fi
+          if [ -z "$UP_OLD_SERVICE_ROLE" ] || [ -z "$UP_NEW_SERVICE_ROLE" ]; then
+            echo "Configure as chaves privadas em GitHub Actions Secrets. Não publique valores."
+            exit 1
+          fi
+          echo "Migração privada validada; nenhum segredo será exibido."
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Simular ou migrar dados operacionais UP
+        run: node scripts/migrate-up-private.mjs
