@@ -50,9 +50,15 @@ function notice(message,error=false){
 }
 function configOkay(){
  try{
-  const url=new URL(CONFIG.managerApiUrl);
-  return CONFIG.firebaseApiKey&&url.protocol==="https:"&&url.hostname.endsWith(".supabase.co")&&
-   url.pathname.endsWith("/functions/v1/up-manager-independent")&&
+  const url=new URL(CONFIG.managerApiUrl),project=new URL(CONFIG.projectUrl);
+  return CONFIG.enabled===true&&typeof CONFIG.firebaseApiKey==="string"&&
+   CONFIG.firebaseApiKey.startsWith("AIza")&&
+   typeof CONFIG.publishableKey==="string"&&CONFIG.publishableKey.startsWith("sb_publishable_")&&
+   url.protocol==="https:"&&project.protocol==="https:"&&
+   url.hostname===project.hostname&&
+   project.hostname===CONFIG.projectRef+".supabase.co"&&
+   url.pathname==="/functions/v1/up-manager-independent"&&
+   !url.search&&!url.hash&&!url.username&&!url.password&&
    CONFIG.firebaseProjectId==="rodrigues-d6566";
  }catch{return false;}
 }
@@ -93,7 +99,8 @@ async function call(action,extra={}){
  try{
   const response=await fetch(CONFIG.managerApiUrl,{
    method:"POST",signal:ctrl.signal,
-   headers:{"content-type":"application/json","authorization":"Bearer "+STORE.token},
+   headers:{"content-type":"application/json",
+    "apikey":CONFIG.publishableKey,"authorization":"Bearer "+STORE.token},
    body:JSON.stringify({action,...extra})
   });
   const data=await response.json().catch(()=>({}));
