@@ -292,7 +292,7 @@ function renderAudit(){
  $("#main").innerHTML='<p class="page-intro">Registro restrito ao proprietário do UP.</p>'+
  '<div class="panel table-scroll"><table class="table"><thead><tr><th>Data</th><th>Ação</th><th>Responsável</th><th>Registro</th></tr></thead><tbody>'+
  (items.map(x=>'<tr><td>'+date(x.created_at)+'</td><td>'+escapeHtml(x.action)+
- '</td><td>'+escapeHtml(x.actor)+'</td><td>'+escapeHtml(x.entity_id||"—")+'</td></tr>').join("")+
+ '</td><td>'+escapeHtml(x.actor)+'</td><td>'+escapeHtml(x.entity_id||"—")+'</td></tr>').join("")||empty("Nenhum evento administrativo."))+
  '</tbody></table></div>';
 }
 function renderMore(){
