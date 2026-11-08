@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
+import vm from "node:vm";
 const api=readFileSync("supabase/functions/up-manager-independent/index.ts","utf8");
 const sql=readFileSync("supabase/up-manager-independent.sql","utf8");
 const app=readFileSync("web-gestor-independente/app.js","utf8");
@@ -56,8 +57,19 @@ assert.ok(css.includes("@media(max-width:720px)"),"Mobile nav CSS required");
 assert.ok(html.includes('name="viewport"'),"Mobile viewport required");
 assert.ok(html.includes('id="bottomNav"'),"Mobile nav required");
 assert.ok(html.includes('id="sideNav"'),"Desktop nav required");
-assert.ok(config.includes('firebaseApiKey:""')&&config.includes('managerApiUrl:""'),
- "Never point a nonprovisioned manager at existing store API");
+const sandbox={window:{}};
+vm.runInNewContext(config,sandbox);
+const publicConfig=sandbox.window.UP_MANAGER_CONFIG;
+assert.equal(publicConfig.enabled,false,"The independent manager stays disabled until backend is authorized");
+assert.equal(publicConfig.projectRef,"gkwmqwtktedarodvqqtn");
+assert.equal(publicConfig.projectUrl,"https://gkwmqwtktedarodvqqtn.supabase.co");
+assert.equal(publicConfig.managerApiUrl,publicConfig.projectUrl+"/functions/v1/up-manager-independent");
+assert.match(publicConfig.publishableKey,/^sb_publishable_[A-Za-z0-9_-]+$/);
+assert.match(publicConfig.firebaseApiKey,/^AIza[A-Za-z0-9_-]{30,}$/);
+assert.equal(publicConfig.firebaseProjectId,"rodrigues-d6566");
+assert.ok(app.includes("CONFIG.enabled===true"),"UI must require explicit activation");
+assert.ok(app.includes('"apikey":CONFIG.publishableKey'),"API must send only the publishable key and the Firebase JWT");
+assert.ok(app.includes("url.hostname===project.hostname"),"API hostname must match its configured UP project");
 assert.ok(!/SERVICE_ROLE_KEY|UP_BRIDGE_SECRET/.test(config),
  "No private key in web configuration");
 console.log("PASS UP Gestor: Firebase JWT, roles, RLS, review, offerings, payments, mobile UI and secret hygiene");
