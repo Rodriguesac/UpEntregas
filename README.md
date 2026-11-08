@@ -1,6 +1,17 @@
 # UP Entregas 2.7 — Supabase operacional
 
-## UP Independente — nova infraestrutura em preparação
+## Implantação real no Supabase exclusivo (08/11/2026)
+
+O banco **UpEntrega** `gkwmqwtktedarodvqqtn` já recebeu a estrutura oficial
+(`supabase/up-independent-schema.sql`, `up-driver-operations.sql`,
+`up-manager-independent.sql`, `up-offer-notifications.sql`).
+O painel, o aplicativo independente e a operação real **ainda não estão ativados**:
+faltam os segredos do servidor, cadastro administrativo verificado,
+migração controlada de entregadores e validação da integração ponta a ponta.
+As rotas legadas continuam isoladas.
+Veja [Status operacional e pendências](docs/STATUS-UP-INDEPENDENTE-2026-11-08.md).
+
+## UP Independente — infraestrutura instalada, ativação controlada
 
 O UP Entregas terá **banco exclusivo**, diferente do banco da Rodrigues Açaí e Cia. A conta proprietária do Supabase UP é outra conta: projeto `gkwmqwtktedarodvqqtn`.
 

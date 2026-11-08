@@ -3,7 +3,7 @@
 **Projeto já criado pelo proprietário:** `gkwmqwtktedarodvqqtn`, URL
 `https://gkwmqwtktedarodvqqtn.supabase.co`.
 
-**Loja, banco antigo e APPs atuais:** continuam funcionando sem alteração. O ChatGPT tem acesso administrativo ao projeto antigo, mas não tem autorização na **outra conta Supabase**. A publishable key pública informada não permite aplicar SQL nem instalar Functions.
+**Situação atualizada — 08/11/2026:** As **duas contas Supabase estão conectadas**, e a estrutura oficial do UP foi implantada no projeto novo. O banco da loja e os aplicativos legados permanecem intactos. As credenciais privadas e as flags operacionais ainda não foram configuradas. Veja [status da implantação](STATUS-UP-INDEPENDENTE-2026-11-08.md).
 
 ## O que já foi construído
 
@@ -19,7 +19,7 @@
 | Mapa do cliente com ticket de 75 segundos | Preparado, requer secrets nos dois servidores |
 | Retorno de status à loja | Função `up-status-receiver` instalada **desativada** na loja |
 | Emissão de ticket pelo site da loja | Função `up-customer-ticket` instalada **desativada** na loja |
-| Projeto SUPABASE independente: tabelas e funções em produção | **Ainda não instalados** |
+| Projeto SUPABASE independente: tabelas e funções em produção | **Banco oficial instalado; 6 APIs operacionais implantadas; cadastro independente pendente por bloqueio de implantação** |
 
 ## Opção A: conectar a nova conta Supabase ao ChatGPT
 
