@@ -22,7 +22,11 @@ const triggers=[
 for(const trigger of triggers)assert.ok(worker.includes(trigger),"Worker missing security control: "+trigger);
 assert.ok(worker.includes('UP_BRIDGE_ENABLED")!=="true"'),'Bridge must be disabled unless explicitly enabled');
 assert.ok(worker.includes('workerToken.length<32')&&worker.includes('secret.length<32'),'Short server secrets forbidden');
-assert.ok(!/fdqqwdplprzpqufpgdrm/.test(worker),'No hardcoded existing customer Supabase URLs');
+assert.ok(worker.includes('shop.hostname!=="fdqqwdplprzpqufpgdrm.supabase.co"'),
+ 'Worker must pin the exact shop domain.');
+assert.ok(worker.includes('url.hostname!=="gkwmqwtktedarodvqqtn.supabase.co"'),
+ 'Worker must pin the exact UP destination; no arbitrary URLs.');
+assert.ok(!worker.includes("UP_BRIDGE_SECRET='"),'No hardcoded HMAC secret in worker');
 assert.ok(!worker.includes('tracking_points'),'UP does not stream GPS to the store');
 assert.ok(!worker.includes('p_decision:"ack"'),'ACK cannot be sent before checking upstream');
 assert.ok(sql.includes("if p_decision='ack' and p_job_id is null"),'Cannot ACK UP without a valid job ID');

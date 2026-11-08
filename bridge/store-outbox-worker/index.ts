@@ -21,10 +21,11 @@ function safeToken(a:string,b:string){
 function endpoint(s:string,shopUrl:string){
  let url:URL,shop:URL;
  try{url=new URL(s);shop=new URL(shopUrl)}catch{throw Error("invalid_endpoint")}
+ const sameHost=url.hostname===shop.hostname;
  if(url.protocol!=="https:"||
   url.hostname!=="gkwmqwtktedarodvqqtn.supabase.co"||
   shop.hostname!=="fdqqwdplprzpqufpgdrm.supabase.co"||
-  url.hostname===shop.hostname||
+  sameHost||
   !url.pathname.endsWith("/functions/v1/up-order-bridge")||
   url.search||url.hash||url.username||url.password)throw Error("invalid_endpoint");
  return url.href;

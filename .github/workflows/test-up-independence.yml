@@ -77,6 +77,7 @@ jobs:
           deno check supabase/functions/up-offer-push/index.ts
           deno check supabase/functions/up-customer-tracking/index.ts
           deno check bridge/store-customer-ticket/index.ts
+          deno check bridge/store-outbox-worker/index.ts
           node --check web-gestor-independente/app.js
       - name: Validar integração e isolamento sem acessar produção
         run: |
