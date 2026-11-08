@@ -6,7 +6,11 @@ on:
       - 'supabase/up-independent-schema.sql'
       - 'supabase/up-driver-operations.sql'
       - 'supabase/up-manager-independent.sql'
+      - 'supabase/up-offer-notifications.sql'
       - 'supabase/functions/up-manager-independent/**'
+      - 'supabase/functions/up-offer-push/**'
+      - 'supabase/functions/up-customer-tracking/**'
+      - 'bridge/store-customer-ticket/**'
       - 'web-gestor-independente/**'
       - 'supabase/functions/up-order-bridge/**'
       - 'scripts/test-up-independence.mjs'
@@ -65,6 +69,9 @@ jobs:
           deno check supabase/functions/up-status-relay/index.ts
           deno check supabase/functions/up-order-bridge/index.ts
           deno check supabase/functions/up-manager-independent/index.ts
+          deno check supabase/functions/up-offer-push/index.ts
+          deno check supabase/functions/up-customer-tracking/index.ts
+          deno check bridge/store-customer-ticket/index.ts
           node --check web-gestor-independente/app.js
       - name: Validar integração e isolamento sem acessar produção
         run: |
