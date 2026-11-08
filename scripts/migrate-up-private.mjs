@@ -10,9 +10,23 @@ const newKey=process.env.UP_NEW_SERVICE_ROLE||'';
 const dryRun=process.env.UP_MIGRATION_DRY_RUN!=='false';
 const approved=process.env.UP_MIGRATION_APPROVED==='true';
 const noPII=(x)=>String(x??'').trim();
+function privilegedHeaders(key){
+ if(key.startsWith('sb_publishable_')||!key||key.length<30)
+  throw Error('private_backend_key_required');
+ // The independent Supabase uses modern secret keys. Unlike legacy
+ // service_role JWTs, sb_secret keys must NEVER be sent as Bearer tokens.
+ if(key.startsWith('sb_secret_'))return {apikey:key};
+ if(!/^[\w-]+\.[\w-]+\.[\w-]+$/.test(key))
+  throw Error('unsupported_private_key_format');
+ let payload;
+ try{payload=JSON.parse(Buffer.from(key.split('.')[1],'base64url').toString('utf8'))}
+ catch{throw Error('invalid_service_role_jwt')}
+ if(payload?.role!=='service_role')throw Error('service_role_required');
+ return {apikey:key,authorization:'Bearer '+key};
+}
 function verifyConfig(){
- if(!oldKey||!newKey||oldKey.length<30||newKey.length<30)
-  throw Error('private_server_keys_required');
+ privilegedHeaders(oldKey);
+ privilegedHeaders(newKey);
  if(!dryRun&&!approved)throw Error('migration_owner_approval_required');
  if(process.env.UP_TARGET_PROJECT_REF!=='gkwmqwtktedarodvqqtn')
   throw Error('destination_mismatch');
@@ -26,10 +40,11 @@ const permitted=(v,values,label)=>{
 async function api(host,key,path,{method='GET',payload}={}){
  const response=await fetch(host+'/rest/v1/'+path,{
   method,headers:{
-   apikey:key,authorization:'Bearer '+key,
+   ...privilegedHeaders(key),
    'content-type':'application/json',
    prefer:'resolution=merge-duplicates,return=minimal'
   },
+  signal:AbortSignal.timeout(15000),
   ...(payload!==undefined?{body:JSON.stringify(payload)}:{})
  });
  if(!response.ok){
@@ -137,6 +152,13 @@ async function main(){
  const ids=new Set(drivers.map(x=>x.firebase_uid));
  if(ids.size!==drivers.length)throw Error('duplicate_courier_uid');
  const data=financialRows(wallet,payouts,drivers);
+ // Confirm the destination really has our isolated schema and is safe to
+ // migrate into. An operational driver or a non-migrated row blocks writes.
+ const existing=await api(TARGET,newKey,'up_couriers?select=id,online,metadata&limit=500');
+ if(!Array.isArray(existing)||existing.length===500)
+  throw Error('destination_requires_review');
+ if(!dryRun&&existing.some(c=>c.online===true||c.metadata?.migration!=='one_way'))
+  throw Error('active_or_unrelated_courier_at_destination');
  // Never log names, personal documents, tokens, addresses, CPF, Pix keys or GPS.
  console.log(JSON.stringify({mode:dryRun?'DRY_RUN':'WRITE',couriers:drivers.length,
   applications:applications.length,ledger:data.transactions.length,
