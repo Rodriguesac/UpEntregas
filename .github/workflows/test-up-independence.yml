@@ -5,6 +5,9 @@ on:
     paths:
       - 'supabase/up-independent-schema.sql'
       - 'supabase/up-driver-operations.sql'
+      - 'supabase/up-manager-independent.sql'
+      - 'supabase/functions/up-manager-independent/**'
+      - 'web-gestor-independente/**'
       - 'supabase/functions/up-order-bridge/**'
       - 'scripts/test-up-independence.mjs'
       - 'scripts/test-up-handoff-contract.mjs'
@@ -17,6 +20,8 @@ on:
       - 'scripts/test-up-status-relay.mjs'
       - 'scripts/test-up-independent-driver.mjs'
       - 'scripts/test-up-independent-registration.mjs'
+      - 'scripts/test-up-manager-independent.mjs'
+      - 'scripts/verify-up-manager-postgres.sh'
       - 'scripts/verify-up-driver-postgres.sh'
       - 'bridge/**'
       - '.github/workflows/test-up-independence.yml'
@@ -59,6 +64,8 @@ jobs:
           deno check supabase/functions/driver-registration-independent/index.ts
           deno check supabase/functions/up-status-relay/index.ts
           deno check supabase/functions/up-order-bridge/index.ts
+          deno check supabase/functions/up-manager-independent/index.ts
+          node --check web-gestor-independente/app.js
       - name: Validar integração e isolamento sem acessar produção
         run: |
           node scripts/test-up-independence.mjs
@@ -71,6 +78,7 @@ jobs:
           node scripts/test-up-status-relay.mjs
           node scripts/test-up-independent-driver.mjs
           node scripts/test-up-independent-registration.mjs
+          node scripts/test-up-manager-independent.mjs
       - name: Validar SQL em PostgreSQL descartável
         run: |
           if ! command -v psql >/dev/null 2>&1; then
@@ -78,3 +86,10 @@ jobs:
           fi
           bash scripts/verify-up-postgres.sh
           bash scripts/verify-up-driver-postgres.sh
+          bash scripts/verify-up-manager-postgres.sh
+      - name: Empacotar novo painel do UP (sem publicar)
+        uses: actions/upload-artifact@v4
+        with:
+          name: UP-Gestor-Independente-Previa
+          path: web-gestor-independente/
+          if-no-files-found: error
