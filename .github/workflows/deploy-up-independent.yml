@@ -50,9 +50,10 @@ jobs:
           if "${{ inputs.deploy_schema }}"=="true":
               try: p=urlsplit(url)
               except Exception: sys.exit("URL do banco inválida.")
-              if p.scheme not in ("postgres","postgresql") or not (
-                    p.hostname == f"db.{ref}.supabase.co" or
-                    p.username == f"postgres.{ref}"):
+              valid_direct=p.hostname==f"db.{ref}.supabase.co" and p.username=="postgres"
+              valid_pooler=(p.hostname or "").endswith(".pooler.supabase.com") and (
+                p.username==f"postgres.{ref}")
+              if p.scheme not in ("postgres","postgresql") or not (valid_direct or valid_pooler):
                   sys.exit("Conexão recusada: o banco NÃO pertence ao projeto UP.")
               if not p.password: sys.exit("Senha de banco ausente.")
           if "${{ inputs.deploy_functions }}"=="true" and not os.environ.get("SUPABASE_ACCESS_TOKEN"):
