@@ -71,3 +71,25 @@ O workflow se recusa a instalar tabelas se a URL Postgres apontar para o banco a
 O APK usa pacote `com.rodriguesacai.upgestor.independente`, não substitui o Gestor antigo. A prévia é instalada com `UP_MANAGER_CONFIG.enabled=false` enquanto o backend não estiver autorizado. Não é produção ativa.
 
 **Importante:** publicar Functions não configura os segredos privados. Todos os recursos externos permanecem desativados por padrão até ativação consciente e validação com usuários fictícios.
+
+
+## Migração privada de entregadores — sem levar GPS para a loja nova
+
+A preparação da migração de pessoas e financeiro também possui operação independente em GitHub Actions:
+
+[Iniciar migração de entregadores pelo GitHub Actions](https://github.com/Rodriguesac/UpEntregas/actions/workflows/migrate-up-private.yml)
+
+O workflow `Migrar entregadores e financeiro ao UP independente (manual)` aceita:
+- `target_project_ref` = `gkwmqwtktedarodvqqtn` (exato).
+- `dry_run` = **verdadeiro por padrão**: somente simula contagens e verifica se a API nova está operacional.
+- `dry_run` = falso **somente com autorização explícita** `AUTORIZO-MIGRAR-UP` no campo `approval`.
+
+Antes de executar, salvar as credenciais **somente como GitHub Actions Secrets**, nunca no código:
+- `UP_OLD_SERVICE_ROLE`: chave `sb_secret_` ou JWT legado service_role do Supabase da loja.
+- `UP_NEW_SERVICE_ROLE`: chave `sb_secret_` ou JWT legado service_role do Supabase independente.
+
+A chave pública `sb_publishable_` fornecida anteriormente **não** serve para migração. Chaves novas `sb_secret_` são enviadas no cabeçalho `apikey`, **nunca** como `Authorization: Bearer`; JWT legado service_role usa ambos. O migrador recusa chaves públicas e qualquer destino diferente.
+
+**Nenhum registro é copiado na simulação**. Com aprovação, somente dados de entregadores, candidaturas, carteiras e repasses são copiados; a origem permanece intocada. O migrador não transfere pedidos, recibos de clientes nem coordenadas GPS e deixa os entregadores inicialmente offline. A transferência só ocorre após a estrutura SQL do UP já estar instalada e o destino não conter motoristas ativos ou dados operacionais de outra origem.
+
+**Situação:** migrador versionado, porém ainda não executado porque as credenciais privadas da segunda conta não estão conectadas ao ambiente.
