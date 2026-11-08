@@ -247,9 +247,11 @@ function renderCouriers(){
   badge(c.state)+'</div><div class="details-grid" style="margin-top:13px">'+
   smallInfo("Presença",c.online?"Online":"Offline")+
   smallInfo("Último GPS",date(c.last_location_at))+
-  '</div>'+(isManager()?'<div class="actions"><button class="button '+(c.state==="SUSPENDED"?"green":"secondary")+
-  '" data-action="driver-state" data-id="'+c.id+'" data-state="'+(c.state==="SUSPENDED"?"APPROVED":"SUSPENDED")+
-  '">'+(c.state==="SUSPENDED"?"Reativar":"Suspender")+'</button></div>':"")+
+  '</div>'+(c.state==="PENDING"?'<div class="warning-note">Importação pendente. Confira identificação e documentos no cadastro anterior antes de aprovar. O entregador não pode receber ofertas.</div>':"")+
+ (isManager()?'<div class="actions"><button class="button '+(c.state==="SUSPENDED"||c.state==="PENDING"?"green":"secondary")+
+  '" data-action="driver-state" data-id="'+c.id+'" data-state="'+(c.state==="SUSPENDED"||c.state==="PENDING"?"APPROVED":"SUSPENDED")+
+  '" data-review-required="'+(c.state==="PENDING"?"true":"false")+'">'+
+  (c.state==="PENDING"?"Revisar e aprovar":c.state==="SUSPENDED"?"Reativar":"Suspender")+'</button></div>':"")+
   '</article>').join("")||empty("Nenhum entregador cadastrado."));
 }
 function renderApplications(){
@@ -417,9 +419,15 @@ async function reviewDialog(appId){
   notice("Situação do cadastro atualizada.");await load("applications");
  });
 }
-async function driverState(id,state){
- const phrase=state==="SUSPENDED"?"suspender":"reativar";
- if(!confirm("Deseja "+phrase+" este entregador no UP?"))return;
+async function driverState(id,state,reviewRequired=false){
+ if(reviewRequired&&state==="APPROVED"){
+  const typed=prompt("Cadastro importado: confira os documentos no sistema antigo. Para aprovar, digite APROVAR:");
+  if(typed!=="APROVAR"){notice("Aprovação não realizada.");return;}
+  if(!confirm("Confirmou a identidade e os documentos do entregador? Autorizar corridas no UP independente?"))return;
+ }else{
+  const phrase=state==="SUSPENDED"?"suspender":"reativar";
+  if(!confirm("Deseja "+phrase+" este entregador no UP?"))return;
+ }
  await call("set_driver_state",{courier_id:id,state});
  notice("Situação do entregador atualizada.");await load("couriers");
 }
@@ -467,7 +475,7 @@ document.addEventListener("click",async event=>{
   if(action==="view-job")await jobDetail(target.dataset.id);
   else if(action==="send-offer")await offerDialog(target.dataset.id);
   else if(action==="review-application")await reviewDialog(target.dataset.id);
-  else if(action==="driver-state")await driverState(target.dataset.id,target.dataset.state);
+  else if(action==="driver-state")await driverState(target.dataset.id,target.dataset.state,target.dataset.reviewRequired==="true");
   else if(action==="wallet")await walletDialog(target.dataset.id);
   else if(action==="payout")payoutDialog(target.dataset.id);
   else if(action==="mark-paid")confirmPayout(target.dataset.id);
