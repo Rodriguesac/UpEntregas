@@ -230,7 +230,7 @@ Deno.serve(async req=>{
    "invalid_uuid","insufficient_permissions","application_not_found",
    "invalid_review","incomplete_application","approved_courier_missing",
    "suspend_existing_driver_separately","courier_not_found","driver_has_active_job",
-   "job_unavailable","job_already_offered","courier_not_available",
+   "job_unavailable","job_already_offered","courier_not_available","courier_busy",
    "insufficient_wallet_balance","invalid_payout","payout_not_found",
    "payout_already_paid_different_reference","payout_cannot_be_paid"
   ];
