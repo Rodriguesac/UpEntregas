@@ -38,10 +38,11 @@ begin
  if p_job is null or p_courier is null or p_offer is null then
   raise exception 'invalid_accept_parameters';
  end if;
- select * into courier from public.up_couriers where id=p_courier;
- if not found or courier.state<>'APPROVED' then raise exception 'courier_not_approved';end if;
+ -- Lock order: job first, then courier, same as UP manager offer RPC.
  select * into job from public.up_jobs where id=p_job for update;
  if not found then raise exception 'job_not_found';end if;
+ select * into courier from public.up_couriers where id=p_courier for update;
+ if not found or courier.state<>'APPROVED' then raise exception 'courier_not_approved';end if;
  select * into offer from public.up_dispatch_offers o where o.id=p_offer
   and o.job_id=p_job and o.courier_id=p_courier for update;
  if not found then raise exception 'offer_not_found';end if;
