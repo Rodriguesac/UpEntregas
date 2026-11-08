@@ -33,6 +33,13 @@ android {
     }
 }
 
+// WebKit brings legacy Kotlin JDK7/JDK8 shims already bundled into newer
+// kotlin-stdlib. Exclude the duplicate compatibility artifacts.
+configurations.configureEach {
+    exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'
+    exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8'
+}
+
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.7.1'
     implementation 'androidx.core:core:1.15.0'
