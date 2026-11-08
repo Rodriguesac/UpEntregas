@@ -4,6 +4,7 @@
 set -euo pipefail
 : "${PGPASSWORD:?Disposable PostgreSQL password required}"
 psql -v ON_ERROR_STOP=1 -d up_test -f supabase/up-manager-independent.sql
+psql -v ON_ERROR_STOP=1 -d up_test -f supabase/up-offer-notifications.sql
 psql -v ON_ERROR_STOP=1 -d up_test <<'SQL'
 SET ROLE service_role;
 
@@ -61,6 +62,18 @@ BEGIN
  IF (SELECT count(*) FROM public.up_job_events
    WHERE job_id=(select id from public.up_jobs where merchant_order_code='890902'))<>2 THEN
   RAISE EXCEPTION 'Offer transition events not recorded';END IF;
+END $mgr$;
+
+-- New offer automatically enqueues an FCM message, exactly once.
+SELECT notification_id AS push_id,lease_id AS push_lease
+ FROM public.up_offer_push_claim(5) \\gset
+SELECT public.up_offer_push_finish(
+ :'push_id'::uuid,:'push_lease'::uuid,'sent',null) AS pushed;
+DO $mgr$
+BEGIN
+ IF (SELECT count(*) FROM public.up_offer_notifications
+   WHERE status='SENT' AND attempts=1)<>1 THEN
+  RAISE EXCEPTION 'Push outbox not acknowledged once';END IF;
 END $mgr$;
 
 -- Driver accepts a real pending UP offer; suspension must then fail.
@@ -124,6 +137,10 @@ BEGIN
  IF has_function_privilege('authenticated',
   'public.up_manager_confirm_payout(uuid,text,text)','EXECUTE') THEN
   RAISE EXCEPTION 'Authenticated user can mark payout paid';END IF;
+ IF has_table_privilege('authenticated','public.up_offer_notifications','SELECT') THEN
+  RAISE EXCEPTION 'User can read push notification outbox';END IF;
+ IF has_function_privilege('anon','public.up_offer_push_claim(integer)','EXECUTE') THEN
+  RAISE EXCEPTION 'Anonymous caller can claim FCM notifications';END IF;
 END $mgr$;
 SQL
 echo "PASS UP Gestor SQL: allowlist, approval idempotency, exclusive offers, payouts and audit"
