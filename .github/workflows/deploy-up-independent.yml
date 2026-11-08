@@ -1,0 +1,97 @@
+name: Ativar infraestrutura independente UP (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      project_ref:
+        description: 'Ref do projeto UP de destino (confirmar projeto correto)'
+        required: true
+        type: string
+      deploy_schema:
+        description: 'Aplicar SQL das tabelas e operações no projeto UP'
+        required: true
+        type: boolean
+        default: true
+      deploy_functions:
+        description: 'Publicar Edge Functions do UP, sem ativar flags'
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-up-independent
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: ${{ inputs.project_ref == 'gkwmqwtktedarodvqqtn' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      UP_DATABASE_URL: ${{ secrets.UP_DATABASE_URL }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.UP_SUPABASE_ACCESS_TOKEN }}
+      UP_PROJECT_REF: gkwmqwtktedarodvqqtn
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validar destino, sem imprimir segredos
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os,sys
+          from urllib.parse import urlsplit
+          ref=os.environ["UP_PROJECT_REF"]
+          if ref!="gkwmqwtktedarodvqqtn":
+              sys.exit("Projeto diferente do UP. Operação cancelada.")
+          url=os.environ.get("UP_DATABASE_URL","")
+          if "${{ inputs.deploy_schema }}"=="true":
+              try: p=urlsplit(url)
+              except Exception: sys.exit("URL do banco inválida.")
+              if p.scheme not in ("postgres","postgresql") or not (
+                    p.hostname == f"db.{ref}.supabase.co" or
+                    p.username == f"postgres.{ref}"):
+                  sys.exit("Conexão recusada: o banco NÃO pertence ao projeto UP.")
+              if not p.password: sys.exit("Senha de banco ausente.")
+          if "${{ inputs.deploy_functions }}"=="true" and not os.environ.get("SUPABASE_ACCESS_TOKEN"):
+              sys.exit("Cadastre UP_SUPABASE_ACCESS_TOKEN nos segredos do GitHub.")
+          print("Destino exclusivo do UP validado.")
+          PY
+
+      - name: Instalar cliente PostgreSQL
+        if: ${{ inputs.deploy_schema }}
+        shell: bash
+        run: |
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y postgresql-client
+          fi
+
+      - name: Criar banco operacional UP, sem importar clientes
+        if: ${{ inputs.deploy_schema }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$UP_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/up-independent-schema.sql
+          psql "$UP_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/up-driver-operations.sql
+          psql "$UP_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/up-manager-independent.sql
+          psql "$UP_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/up-offer-notifications.sql
+          psql "$UP_DATABASE_URL" -X -Atqc "select count(*) from information_schema.tables where table_schema='public' and table_name in ('up_couriers','up_jobs','up_tracking_points','up_manager_users','up_offer_notifications');" | grep -qx 5
+          echo "Estrutura exclusiva do UP instalada."
+
+      - uses: supabase/setup-cli@v1
+        if: ${{ inputs.deploy_functions }}
+        with:
+          version: latest
+
+      - name: Publicar backend UP sem ativar a operação
+        if: ${{ inputs.deploy_functions }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for fn in             up-order-bridge             up-status-relay             driver-api-independent             driver-registration-independent             up-manager-independent             up-customer-tracking             up-offer-push; do
+            supabase functions deploy "$fn" --project-ref "$UP_PROJECT_REF" --no-verify-jwt
+          done
+          echo "Funções no novo projeto UP. A ativação exige variáveis privadas específicas."
