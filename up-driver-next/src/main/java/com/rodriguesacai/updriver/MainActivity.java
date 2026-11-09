@@ -300,7 +300,8 @@ public final class MainActivity extends ComponentActivity {
         approved=false;screen="pending";
         verification="pending".equals(status)?"Sua inscrição aguarda análise do gestor."
             :"correction".equals(status)?"O gestor solicitou correção do cadastro."
-            :"suspended".equals(status)?"Seu cadastro foi suspenso. Entre em contato com o gestor."\n            :"rejected".equals(status)?"Seu cadastro não foi aprovado."
+            :"suspended".equals(status)?"Seu cadastro foi suspenso. Entre em contato com o gestor."
+            :"rejected".equals(status)?"Seu cadastro não foi aprovado."
             :"Nenhum cadastro encontrado. Envie seus dados para análise.";
         render();
     }
