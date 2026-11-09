@@ -30,6 +30,24 @@ jobs:
           packages: ''
       - name: Instalar API 35
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Restaurar assinatura estavel da previa independente
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: up-driver-next-debug-keystore-v1
+      - name: Garantir chave exclusiva de atualizacao da previa
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.android
+          if [ ! -f ~/.android/debug.keystore ]; then
+            keytool -genkeypair -v \
+              -keystore ~/.android/debug.keystore \
+              -storepass android -alias androiddebugkey \
+              -keypass android -keyalg RSA -keysize 3072 \
+              -validity 10000 \
+              -dname "CN=UP Entregador Next, OU=UP Entregas, O=Rodrigues, L=Campo Grande, ST=MS, C=BR"
+          fi
       - name: Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
