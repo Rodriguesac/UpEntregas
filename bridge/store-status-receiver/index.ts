@@ -31,9 +31,10 @@ function stage(status:string){
 }
 Deno.serve(async(req:Request)=>{
  if(req.method!=="POST")return reply(405,{ok:false,error:"method_not_allowed"});
- if(Deno.env.get("UP_STATUS_CALLBACK_ENABLED")!=="true")
-  return reply(503,{ok:false,error:"independent_callback_disabled"});
  if(req.headers.has("origin"))return reply(403,{ok:false,error:"server_to_server_only"});
+ // A sondagem assinada é somente leitura, inclusive antes de habilitar callbacks.
+ // A mesma chave autentica esta mensagem sem criar pedidos nem mudar status.
+ const callbackEnabled=Deno.env.get("UP_STATUS_CALLBACK_ENABLED")==="true";
  const url=Deno.env.get("SUPABASE_URL"),service=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
  const secret=Deno.env.get("UP_BRIDGE_SECRET");
  if(!url||!service||!secret||secret.length<32)return reply(503,{ok:false,error:"service_not_configured"});
@@ -43,6 +44,13 @@ Deno.serve(async(req:Request)=>{
  if(enc.encode(body).length>8192)return reply(413,{ok:false,error:"payload_too_large"});
  if(!await authenticated(req,body,secret))return reply(401,{ok:false,error:"invalid_signature"});
  let event:any;try{event=JSON.parse(body)}catch{return reply(400,{ok:false,error:"invalid_json"})}
+ if(event?.action==="bridge_probe"){
+  if(event?.version!==1||typeof event?.nonce!=="string"||
+   !UUID.test(event.nonce))return reply(422,{ok:false,error:"invalid_probe"});
+  return reply(200,{ok:true,probe:true,signature_verified:true,
+   callback_enabled:callbackEnabled});
+ }
+ if(!callbackEnabled)return reply(503,{ok:false,error:"independent_callback_disabled"});
  const {version,action}=event||{};
  const orderId=clean(event?.order_id),jobId=clean(event?.job_id),eventId=clean(event?.event_id);
  const status=clean(event?.state).toUpperCase(),seq=Number(event?.sequence);
