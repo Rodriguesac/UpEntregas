@@ -19,7 +19,7 @@ public final class UpDriverApp extends Application {
         if (FirebaseApp.getApps(this).isEmpty()) {
             FirebaseOptions options = new FirebaseOptions.Builder()
                 .setApplicationId(BuildConfig.UP_FIREBASE_APP_ID)
-                .setApiKey("AIzaSyBkCcdbR8Z9V9DB0wAJfC_YiRaNe8nnaA4")
+                .setApiKey(BuildConfig.UP_FIREBASE_API_KEY)
                 .setProjectId("rodrigues-d6566")
                 .setGcmSenderId("1010835711502")
                 .build();

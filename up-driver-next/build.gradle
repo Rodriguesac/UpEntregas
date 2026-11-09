@@ -10,8 +10,8 @@ android {
         applicationId 'com.rodriguesacai.updriver.independente'
         minSdk 26
         targetSdk 35
-        versionCode 100
-        versionName '1.0.0-beta'
+        versionCode 101
+        versionName '1.0.1-beta'
         buildConfigField 'String', 'UP_DRIVER_ENDPOINT', '"https://gkwmqwtktedarodvqqtn.supabase.co/functions/v1/driver-api-independent"'
         buildConfigField 'String', 'UP_REGISTRATION_ENDPOINT', '"https://gkwmqwtktedarodvqqtn.supabase.co/functions/v1/driver-registration-independent"'
         buildConfigField 'String', 'UP_PUBLISHABLE_KEY', '"sb_publishable_-G8dzZ51cG9ZTdVviPAQdQ_9oSnwCyG"'
@@ -24,6 +24,9 @@ android {
             throw new GradleException('UP Firebase App ID: informe o ID NOVO do pacote Android independente, nunca o do app antigo.')
         }
         def firebaseAppId = suppliedAppId ?: previewAppId
+        def suppliedApiKey = (project.findProperty('upFirebaseApiKey') ?: '').toString().trim()
+        def firebaseApiKey = suppliedApiKey ?: 'AIzaSyBkCcdbR8Z9V9DB0wAJfC_YiRaNe8nnaA4'
+        buildConfigField 'String', 'UP_FIREBASE_API_KEY', '"' + firebaseApiKey + '"'
         buildConfigField 'String', 'UP_FIREBASE_APP_ID', '"' + firebaseAppId + '"'
         buildConfigField 'boolean', 'UP_FIREBASE_ANDROID_REGISTERED', (!suppliedAppId.isEmpty()).toString()
     }

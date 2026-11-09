@@ -68,3 +68,25 @@ permanecem nas Edge Functions.
 - [ ] Assinar APK de lançamento com chave de produção (não reutilizar debug) e promover com rollback.
 
 **Não expor segredos no APK. Não ativar corrida real sem essa validação ponta a ponta.**
+
+## Configuração Firebase individual para habilitar FCM
+
+O Android do novo UP precisa ser cadastrado no Firebase `rodrigues-d6566` com o
+**package exato** `com.rodriguesacai.updriver.independente`.
+
+Não reutilizar a entrada de app Firebase do entregador antigo. A compilação de
+prévia funciona com o login Firebase da mesma conta, mas agora marca
+`UP_FIREBASE_ANDROID_REGISTERED=false` e **não afirma que o FCM funciona**.
+
+O build automatizado aceita o GitHub Actions secret
+`UP_DRIVER_FIREBASE_GOOGLE_SERVICES_B64`, contendo o JSON fornecido pelo Firebase
+codificado em base64. Antes de compilar, o workflow verifica **project_id,
+project_number e Android package_name**, extrai somente App ID e API key públicos
+e os injeta no APK. Sem configuração, gera prévia com notificações push bloqueadas.
+
+Não subir service account, token privado, `service_role` ou HMAC nesse secret:
+o valor esperado é o arquivo de configuração **Android google-services.json**,
+que contém apenas metadados públicos da aplicação Firebase. O servidor FCM
+usa outra credencial privada armazenada nas Edge Function Secrets.
+
+Para distribuição, validar o Firebase via login/FCM e assinar com chave de release.
