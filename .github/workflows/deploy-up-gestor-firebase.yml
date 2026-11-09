@@ -1,0 +1,91 @@
+name: Publicar UP Gestor no Firebase Hosting (site isolado)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: deploy-up-gestor-firebase
+  cancel-in-progress: false
+jobs:
+  firebase_hosting:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      UP_FIREBASE_PROJECT: rodrigues-d6566
+      UP_FIREBASE_SITE: upgestor-rac
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+      - name: Preparar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verificar aplicação antes da publicação
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check web-gestor-independente/app.js
+          node scripts/test-up-manager-independent.mjs
+      - name: Preparar arquivos públicos de forma isolada
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .up-gestor-hosting
+          cp web-gestor-independente/index.html .up-gestor-hosting/
+          cp web-gestor-independente/app.js .up-gestor-hosting/
+          cp web-gestor-independente/styles.css .up-gestor-hosting/
+          cp web-gestor-independente/config.js .up-gestor-hosting/
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          config=Path('.up-gestor-hosting/config.js')
+          text=config.read_text(encoding='utf-8')
+          assert text.count('enabled:false')==1
+          assert 'firebaseProjectId:"rodrigues-d6566"' in text
+          assert 'projectRef:"gkwmqwtktedarodvqqtn"' in text
+          assert 'service_role' not in text.lower()
+          config.write_text(text.replace('enabled:false','enabled:true',1),encoding='utf-8')
+          firebase=json.loads(Path('firebase.up-gestor.json').read_text())
+          assert firebase['hosting']['site']=='upgestor-rac'
+          assert firebase['hosting']['public']=='.up-gestor-hosting'
+          assert 'hosting' not in json.loads(Path('firebase.json').read_text())
+          print('Painel pronto para deploy exclusivo em upgestor-rac.web.app')
+          PY
+      - name: Validar autorização de deploy
+        env:
+          FIREBASE_DEPLOY_CREDENTIAL: ${{ secrets.UP_FIREBASE_SERVICE_ACCOUNT_JSON }}
+        shell: bash
+        run: |
+          if [ -z "$FIREBASE_DEPLOY_CREDENTIAL" ]; then
+            echo "::error title=Conectar Firebase::Configure o segredo UP_FIREBASE_SERVICE_ACCOUNT_JSON no repositório ou conecte o app Firebase ao ChatGPT para publicação direta."
+            exit 1
+          fi
+      - name: Autenticar no Firebase de forma segura
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.UP_FIREBASE_SERVICE_ACCOUNT_JSON }}
+      - name: Instalar Firebase CLI
+        run: npm install --global firebase-tools
+      - name: Criar segundo site somente se necessário
+        shell: bash
+        run: |
+          set -euo pipefail
+          firebase hosting:sites:list --project "$UP_FIREBASE_PROJECT" --json > /tmp/up-firebase-sites.json
+          python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/up-firebase-sites.json',encoding='utf-8'))
+          assert data.get('status')=='success', 'Não foi possível ler sites do projeto Firebase'
+          found=False
+          for site in data.get('result',[]):
+              if site.get('name','').endswith('/sites/upgestor-rac'):
+                  found=True
+          open('/tmp/up-hosting-exists','w').write('yes' if found else 'no')
+          PY
+          if [ "$(cat /tmp/up-hosting-exists)" != "yes" ]; then
+            firebase hosting:sites:create "$UP_FIREBASE_SITE" --project "$UP_FIREBASE_PROJECT"
+          fi
+      - name: Publicar APENAS site UP Gestor
+        run: |
+          firebase deploy --project "$UP_FIREBASE_PROJECT" \
+            --config firebase.up-gestor.json --only hosting --non-interactive
+          echo "UP Gestor: https://$UP_FIREBASE_SITE.web.app" >> "$GITHUB_STEP_SUMMARY"
