@@ -92,6 +92,51 @@ Deno.serve(async req=>{
    return reply(origin,{ok:true,checks,flags,note:"Credenciais nunca são exibidas; configuração da loja deve ser validada separadamente."});
   }
 
+  // Diagnóstico real e somente leitura UP -> loja, assinado com HMAC.
+  // Não simula nem cria uma corrida, não muda nenhum pedido, não expõe chaves.
+  if(action==="integration_probe"){
+   authorizeRole(role,privateRoles);
+   const expected="https://fdqqwdplprzpqufpgdrm.supabase.co/functions/v1/up-status-receiver";
+   const destination=txt(Deno.env.get("UP_STATUS_STORE_ENDPOINT"));
+   const secret=Deno.env.get("UP_BRIDGE_SECRET")||"";
+   if(destination!==expected||secret.length<32)
+    return reply(origin,{ok:true,probe:{
+     connection_ok:false,callback_enabled:false,
+     status:"missing_configuration",message:"Confira destino de retorno e chave compartilhada."}});
+   const payload=JSON.stringify({
+    version:1,action:"bridge_probe",nonce:crypto.randomUUID()
+   });
+   const timestamp=String(Math.floor(Date.now()/1000));
+   const key=await crypto.subtle.importKey("raw",new TextEncoder().encode(secret),
+    {name:"HMAC",hash:"SHA-256"},false,["sign"]);
+   const signature=new Uint8Array(await crypto.subtle.sign("HMAC",key,
+    new TextEncoder().encode(timestamp+"\n"+payload)));
+   const hex=Array.from(signature,b=>b.toString(16).padStart(2,"0")).join("");
+   let response:Response;
+   try{
+    response=await fetch(destination,{method:"POST",
+     headers:{"content-type":"application/json","x-up-timestamp":timestamp,
+      "x-up-signature":hex},
+     body:payload,signal:AbortSignal.timeout(9000)});
+   }catch{
+    return reply(origin,{ok:true,probe:{
+     connection_ok:false,callback_enabled:false,
+     status:"network_error",message:"Não foi possível alcançar o banco da loja."}});
+   }
+   let result:any;try{result=await response.json()}catch{result={}}
+   const connected=response.ok&&result?.ok===true&&result?.probe===true&&
+    result?.signature_verified===true;
+   return reply(origin,{ok:true,probe:{
+    connection_ok:connected,
+    callback_enabled:connected&&result?.callback_enabled===true,
+    status:connected?"signed_connection_ok":response.status===401?
+     "signature_mismatch":response.status===503?"store_not_ready":"store_rejected",
+    message:connected?"Os dois bancos validaram a mesma chave de integração.":
+     response.status===401?"As chaves dos dois projetos não coincidem.":
+     "A loja não confirmou o teste seguro de comunicação."
+   }});
+  }
+
   if(action==="dashboard"){
    const [jobs,couriers,applications,payouts]=await Promise.all([
     db.from("up_jobs").select("id,status,assigned_courier_id").limit(1000),
