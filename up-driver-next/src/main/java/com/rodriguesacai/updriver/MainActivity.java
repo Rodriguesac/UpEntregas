@@ -146,7 +146,7 @@ public final class MainActivity extends ComponentActivity {
         titleLp.leftMargin = dp(13);
         top.addView(titles,titleLp);
         text(titles,"UP ENTREGADOR",19,WHITE,true);
-        text(titles,"Corridas e GPS em tempo real",11,Color.rgb(191,211,238),false);
+        // O login usa um cabeçalho limpo; não exibir slogans sobre GPS.
         TextView version = new TextView(this);
         version.setText("v" + BuildConfig.VERSION_NAME);
         version.setTextSize(10);
@@ -225,7 +225,7 @@ public final class MainActivity extends ComponentActivity {
 
     private void login() {
         LinearLayout c=card();
-        title(c,"Bem-vindo de volta","Entre com sua conta de entregador.");
+        title(c,"Entrar no UP","Use seu e-mail e sua senha.");
         EditText email=input(c,"Seu e-mail",InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
         EditText pass=input(c,"Senha",InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         button(c,"Entrar no UP",BLUE,false,()->{
@@ -239,9 +239,7 @@ public final class MainActivity extends ComponentActivity {
         button(c,"Quero me cadastrar",Color.rgb(227,236,251),true,()->{
             screen="signup";notice="";render();
         });
-        LinearLayout info = card();
-        text(info,"Como funciona?",16,INK,true);gap(info,6);
-        text(info,"Seu cadastro é analisado pelo UP Gestor. Somente entregadores aprovados recebem ofertas e podem iniciar corridas.",13,MUTED,false);
+        // Aprovação e elegibilidade aparecem quando forem relevantes ao cadastro.
     }
 
     private void signUp() {
