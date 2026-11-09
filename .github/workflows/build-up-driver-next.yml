@@ -1,0 +1,60 @@
+name: Compilar UP Entregador Next (independente)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-up-driver-next.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Baixar aplicativo independente sem tocar no legado
+        uses: actions/checkout@v4
+        with:
+          ref: up-entregador-nativo-independente-20261109
+      - name: Preparar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Preparar SDK Android
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ''
+      - name: Instalar API 35
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Compilar SOMENTE app novo e independente
+        run: gradle :up-driver-next:assembleDebug --stacktrace
+      - name: Verificar identidade e destino do APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s up-driver-next/build/outputs/apk/debug/up-driver-next-debug.apk
+          file=up-driver-next/build/generated/source/buildConfig/debug/com/rodriguesacai/updriver/BuildConfig.java
+          test -s "$file"
+          grep -Fq 'gkwmqwtktedarodvqqtn.supabase.co/functions/v1/driver-api-independent' "$file"
+          grep -Fq 'gkwmqwtktedarodvqqtn.supabase.co/functions/v1/driver-registration-independent' "$file"
+          if grep -Fq 'fdqqwdplprzpqufpgdrm' "$file"; then
+            echo "Falha: app novo aponta para o Supabase da loja"
+            exit 1
+          fi
+          cp up-driver-next/build/outputs/apk/debug/up-driver-next-debug.apk UP-Entregador-Novo-Previa.apk
+          sha256sum UP-Entregador-Novo-Previa.apk
+      - name: Disponibilizar APK de previa, sem publicar em producao
+        uses: actions/upload-artifact@v4
+        with:
+          name: UP-Entregador-Novo-Previa
+          path: UP-Entregador-Novo-Previa.apk
+          retention-days: 7
+          if-no-files-found: error
