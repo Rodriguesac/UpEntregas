@@ -40,6 +40,12 @@ on:
       - 'supabase/up-gps-retention.sql'
       - 'bridge/**'
       - '.github/workflows/test-up-independence.yml'
+  pull_request:
+    paths:
+      - 'supabase/functions/driver-api-independent/**'
+      - 'app/src/main/java/com/rodriguesacai/entregador/MainActivity.java'
+      - 'app/src/main/java/com/rodriguesacai/entregador/SupabaseDriverApi.java'
+      - '.github/workflows/test-up-independence.yml'
   workflow_dispatch:
 permissions:
   contents: read
@@ -85,6 +91,8 @@ jobs:
           deno check bridge/store-customer-ticket/index.ts
           deno check bridge/store-outbox-worker/index.ts
           node --check web-gestor-independente/app.js
+      - name: Verificar a protecao por bateria no aceite de corrida
+        run: node --test supabase/functions/driver-api-independent/battery-policy.test.mjs
       - name: Validar integração e isolamento sem acessar produção
         run: |
           node scripts/test-up-independence.mjs
