@@ -1,0 +1,93 @@
+name: Empacotar UP Gestor para Netlify
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'web-gestor-independente/**'
+      - 'scripts/test-up-manager-independent.mjs'
+      - '.github/workflows/package-up-gestor-netlify.yml'
+permissions:
+  contents: write
+concurrency:
+  group: up-gestor-netlify-package
+  cancel-in-progress: false
+jobs:
+  empacotar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validar painel e isolamento
+        run: |
+          set -euo pipefail
+          node --check web-gestor-independente/app.js
+          node scripts/test-up-manager-independent.mjs
+      - name: Montar pacote de instalação SEM segredos
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile, ZIP_DEFLATED
+          import shutil
+          source = Path('web-gestor-independente')
+          target = Path('up-gestor-netlify-ready')
+          target.mkdir(exist_ok=True)
+          for filename in ('index.html', 'app.js', 'styles.css', 'config.js'):
+              p=source/filename
+              assert p.is_file() and p.stat().st_size > 0, 'Arquivo ausente: '+filename
+              shutil.copy2(p,target/filename)
+          config=target/'config.js'
+          body=config.read_text(encoding='utf-8')
+          assert body.count('enabled:false') == 1
+          assert 'projectRef:"gkwmqwtktedarodvqqtn"' in body
+          assert 'firebaseProjectId:"rodrigues-d6566"' in body
+          assert 'SUPABASE_SERVICE_ROLE_KEY' not in body
+          assert 'UP_BRIDGE_SECRET' not in body
+          config.write_text(body.replace('enabled:false','enabled:true',1),encoding='utf-8')
+          (target/'_headers').write_text("""/*
+            X-Content-Type-Options: nosniff
+            X-Frame-Options: DENY
+            Referrer-Policy: no-referrer
+            Permissions-Policy: camera=(), microphone=(), geolocation=()
+            Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://gkwmqwtktedarodvqqtn.supabase.co
+          /index.html
+            Cache-Control: no-store, no-cache, must-revalidate
+          /config.js
+            Cache-Control: no-store, no-cache, must-revalidate
+          """,encoding='utf-8')
+          with ZipFile('UP-Gestor-Netlify.zip','w',ZIP_DEFLATED) as zip_file:
+              for p in sorted(target.iterdir()):
+                  assert p.is_file()
+                  zip_file.write(p,p.name)
+          with ZipFile('UP-Gestor-Netlify.zip') as zip_file:
+              assert {'index.html','app.js','styles.css','config.js','_headers'} == set(zip_file.namelist())
+              assert b'enabled:true' in zip_file.read('config.js')
+          print('PASS: pacote pronto, login habilitado apenas no cliente, sem chaves privadas.')
+          PY
+      - name: Disponibilizar pasta pronta e ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: UP-Gestor-Netlify-Pronto
+          path: |
+            up-gestor-netlify-ready/
+            UP-Gestor-Netlify.zip
+          if-no-files-found: error
+      - name: Publicar ZIP da instalação em link fixo
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="up-gestor-netlify-ready"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" UP-Gestor-Netlify.zip --clobber
+          else
+            gh release create "$tag" UP-Gestor-Netlify.zip \
+              --title "UP Gestor — pacote para Netlify" \
+              --notes "Arquivos estáticos do painel independente. Instalar somente no Netlify upgestor-rac. Login exige Firebase UID autorizado; não libera corridas reais." \
+              --prerelease --latest=false
+          fi
