@@ -56,6 +56,7 @@ public final class MainActivity extends ComponentActivity {
     private JSONObject mission;
     private String missionId = "";
     private JSONArray history = new JSONArray();
+    private JSONArray walletEntries = new JSONArray(), payouts = new JSONArray();
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -83,7 +84,7 @@ public final class MainActivity extends ComponentActivity {
     }
 
     @Override public void onBackPressed() {
-        if ("mission".equals(screen) || "history".equals(screen) || "profile".equals(screen)) {
+        if ("mission".equals(screen) || "history".equals(screen) || "profile".equals(screen) || "wallet".equals(screen)) {
             screen = "home"; render(); return;
         }
         super.onBackPressed();
@@ -115,6 +116,7 @@ public final class MainActivity extends ComponentActivity {
         else if ("pending".equals(screen)) pending();
         else if ("registration".equals(screen)) registration();
         else if ("history".equals(screen)) history();
+        else if ("wallet".equals(screen)) wallet();
         else if ("profile".equals(screen)) profile();
         else if ("mission".equals(screen)) mission();
         else home();
@@ -544,6 +546,59 @@ public final class MainActivity extends ComponentActivity {
         });
     }
 
+    private void wallet() {
+        LinearLayout main=card();
+        title(main,"Meus ganhos","Informações financeiras consultadas diretamente no banco UP.");
+        double credits=0,debits=0;
+        for(int i=0;i<walletEntries.length();i++) {
+            JSONObject e=walletEntries.optJSONObject(i);if(e==null)continue;
+            double val=e.optDouble("amount",0);
+            if("CREDIT".equals(e.optString("kind")))credits+=val;
+            else if("DEBIT".equals(e.optString("kind")))debits+=val;
+            else if("ADJUSTMENT".equals(e.optString("kind")))credits+=val;
+        }
+        text(main,"Créditos registrados: "+currency(credits),16,GREEN,true);
+        text(main,"Débitos registrados: "+currency(debits),14,MUTED,false);
+        gap(main,7);
+        text(main,"Movimentação líquida: "+currency(credits-debits),19,INK,true);
+        text(main,"Este valor é informativo, não representa promessa de saque ou repasse.",12,MUTED,false);
+        button(main,"Atualizar financeiro",BLUE,false,this::loadWallet);
+
+        LinearLayout ledger=card();
+        text(ledger,"Últimos lançamentos",17,INK,true);gap(ledger,10);
+        if(walletEntries.length()==0)text(ledger,"Ainda não há lançamentos registrados.",13,MUTED,false);
+        for(int i=0;i<Math.min(walletEntries.length(),25);i++) {
+            JSONObject entry=walletEntries.optJSONObject(i);if(entry==null)continue;
+            String kind=entry.optString("kind","");
+            String description=entry.optString("description","");
+            if(description.isEmpty())description="Movimentação "+kind;
+            text(ledger,description,14,INK,true);
+            text(ledger,currency(entry.optDouble("amount",0))+" • "+kind,13,MUTED,false);
+            gap(ledger,12);
+        }
+
+        LinearLayout transfers=card();
+        text(transfers,"Repasses",17,INK,true);gap(transfers,10);
+        if(payouts.length()==0)text(transfers,"Nenhum repasse solicitado.",13,MUTED,false);
+        for(int i=0;i<Math.min(payouts.length(),25);i++) {
+            JSONObject p=payouts.optJSONObject(i);if(p==null)continue;
+            text(transfers,currency(p.optDouble("amount",0)),15,INK,true);
+            text(transfers,p.optString("status","Em análise"),13,BLUE,false);
+            gap(transfers,10);
+        }
+    }
+
+    private void loadWallet() {
+        backend.driver("wallet",Backend.args(),new Backend.Callback(){
+            @Override public void onSuccess(JSONObject resp) {
+                JSONArray a=resp.optJSONArray("transactions"), b=resp.optJSONArray("payouts");
+                walletEntries=a==null?new JSONArray():a;payouts=b==null?new JSONArray():b;
+                screen="wallet";notice="";render();
+            }
+            @Override public void onError(String message){inform(message);}
+        });
+    }
+
     private void profile() {
         LinearLayout c=card();
         title(c,"Minha conta","UP Entregador • Conta independente");
@@ -571,7 +626,7 @@ public final class MainActivity extends ComponentActivity {
             });
         FirebaseAuth.getInstance().signOut();
         approved=false;online=false;mission=null;missionId="";history=new JSONArray();
-        screen="login";notice="";render();
+        screen="login";notice="";walletEntries=new JSONArray();payouts=new JSONArray();render();
     }
 
     private void bottomNavigation() {
@@ -582,6 +637,7 @@ public final class MainActivity extends ComponentActivity {
         addTab(bar,"Início","home");
         addTab(bar,"Corrida","mission");
         addTab(bar,"Histórico","history");
+        addTab(bar,"Ganhos","wallet");
         addTab(bar,"Conta","profile");
         root.addView(bar,new LinearLayout.LayoutParams(-1,-2));
     }
@@ -601,6 +657,7 @@ public final class MainActivity extends ComponentActivity {
             if("mission".equals(to) && mission==null){screen="home";render();return;}
             screen=to;notice="";render();
             if("history".equals(to))loadHistory();
+            if("wallet".equals(to))loadWallet();
         });
     }
 
