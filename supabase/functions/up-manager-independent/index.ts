@@ -154,6 +154,48 @@ Deno.serve(async req=>{
      payout_pending:paid.filter(x=>x.status==="REQUESTED").length},
     sampled:all.length===1000});
   }
+  // Authenticated UP dispatchers only; no keys or internal IDs from the browser are trusted.
+  if(action==="merchant_locations"){
+   authorizeRole(role,operatingRoles);
+   const r=await db.from("up_merchants")
+    .select("id,display_name,state,up_merchant_locations(id,label,city,state,is_default)")
+    .eq("state","ACTIVE").order("display_name",{ascending:true}).limit(100);
+   if(r.error)throw r.error;
+   return reply(origin,{ok:true,merchants:(r.data||[]).map((m:any)=>({
+    id:m.id,display_name:m.display_name,
+    locations:(m.up_merchant_locations||[]).filter((loc:any)=>loc.state==="ACTIVE")
+     .map((loc:any)=>({id:loc.id,label:loc.label,city:loc.city,is_default:loc.is_default}))
+   }))});
+  }
+  if(action==="create_manual_job"){
+   authorizeRole(role,operatingRoles);
+   const merchantId=id(body.merchant_id),locationId=id(body.location_id);
+   const requestId=id(body.request_id),code=txt(body.order_code);
+   const src=obj(body.dropoff);
+   const destination={
+    street:txt(src.street).slice(0,180),number:txt(src.number).slice(0,20),
+    neighborhood:txt(src.neighborhood).slice(0,120),city:txt(src.city).slice(0,120),
+    state:txt(src.state).slice(0,2),complement:txt(src.complement).slice(0,150),
+    reference:txt(src.reference).slice(0,150)
+   };
+   const name=txt(body.recipient_name).slice(0,150);
+   const phone=txt(body.recipient_phone).replace(/\D/g,"").slice(0,15);
+   if(!/^\d{3,32}$/.test(code)||name.length<2||phone.length<10||
+      destination.street.length<3||destination.city.length<2)
+    return fail(origin,422,"invalid_manual_request");
+   const normalized={merchantId,locationId,requestId,code,destination,name,phone};
+   const rawHash=await crypto.subtle.digest("SHA-256",
+    new TextEncoder().encode(JSON.stringify(normalized)));
+   const hash=Array.from(new Uint8Array(rawHash),x=>x.toString(16).padStart(2,"0")).join("");
+   const r=await db.rpc("up_manager_manual_job",{
+    p_merchant:merchantId,p_location:locationId,p_request_id:requestId,
+    p_code:code,p_dropoff:destination,p_name:name,p_phone:phone,
+    p_actor:uid,p_fingerprint:hash
+   });
+   if(r.error)throw r.error;
+   return reply(origin,{ok:true,job:r.data?.[0]||null,
+    billing_status:"NOT_QUOTED",note:"Nenhuma cobrança ou repasse foi gerado."});
+  }
   if(action==="jobs_list"){
    const r=await db.from("up_jobs")
     .select("id,merchant_order_code,merchant_order_id,recipient_name,collection_amount,status,assigned_courier_id,received_at,updated_at,delivered_at")
@@ -302,6 +344,8 @@ Deno.serve(async req=>{
    "invalid_review","incomplete_application","approved_courier_missing",
    "suspend_existing_driver_separately","courier_not_found","driver_has_active_job",
    "job_unavailable","job_already_offered","courier_not_available","courier_busy",
+   "invalid_manual_request","invalid_delivery_address","manual_request_conflict",
+   "merchant_not_active","pickup_not_active",
    "insufficient_wallet_balance","invalid_payout","payout_not_found",
    "payout_already_paid_different_reference","payout_cannot_be_paid"
   ];
