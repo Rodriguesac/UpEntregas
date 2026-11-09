@@ -48,17 +48,19 @@ jobs:
           assert 'SUPABASE_SERVICE_ROLE_KEY' not in body
           assert 'UP_BRIDGE_SECRET' not in body
           config.write_text(body.replace('enabled:false','enabled:true',1),encoding='utf-8')
-          (target/'_headers').write_text("""/*
-            X-Content-Type-Options: nosniff
-            X-Frame-Options: DENY
-            Referrer-Policy: no-referrer
-            Permissions-Policy: camera=(), microphone=(), geolocation=()
-            Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://gkwmqwtktedarodvqqtn.supabase.co
-          /index.html
-            Cache-Control: no-store, no-cache, must-revalidate
-          /config.js
-            Cache-Control: no-store, no-cache, must-revalidate
-          """,encoding='utf-8')
+          (target/'_headers').write_text("\n".join([
+              "/*",
+              "  X-Content-Type-Options: nosniff",
+              "  X-Frame-Options: DENY",
+              "  Referrer-Policy: no-referrer",
+              "  Permissions-Policy: camera=(), microphone=(), geolocation=()",
+              "  Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://gkwmqwtktedarodvqqtn.supabase.co",
+              "/index.html",
+              "  Cache-Control: no-store, no-cache, must-revalidate",
+              "/config.js",
+              "  Cache-Control: no-store, no-cache, must-revalidate",
+              ""
+          ]),encoding='utf-8')
           with ZipFile('UP-Gestor-Netlify.zip','w',ZIP_DEFLATED) as zip_file:
               for p in sorted(target.iterdir()):
                   assert p.is_file()
@@ -91,3 +93,20 @@ jobs:
               --notes "Arquivos estáticos do painel independente. Instalar somente no Netlify upgestor-rac. Login exige Firebase UID autorizado; não libera corridas reais." \
               --prerelease --latest=false
           fi
+
+      - name: Publicar diretamente no Netlify se token estiver conectado
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${NETLIFY_AUTH_TOKEN:-}" ]; then
+            echo "::notice title=Netlify sem autorização::O site e o pacote estão preparados. Falta conectar NETLIFY_AUTH_TOKEN para publicar automaticamente."
+            echo "NETLIFY_DEPLOY_STATUS=needs_authorization" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          npx --yes netlify-cli@latest deploy --prod \
+            --dir up-gestor-netlify-ready \
+            --site f24525f3-2b96-4acd-997b-85b8038cabc3 \
+            --message "UP Gestor Independente - publicação autorizada"
+          echo "NETLIFY_DEPLOY_STATUS=published" >> "$GITHUB_STEP_SUMMARY"
