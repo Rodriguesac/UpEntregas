@@ -18,7 +18,7 @@ public final class UpDriverApp extends Application {
         // register THIS package in Firebase and ship its dedicated Android configuration.
         if (FirebaseApp.getApps(this).isEmpty()) {
             FirebaseOptions options = new FirebaseOptions.Builder()
-                .setApplicationId("1:1010835711502:android:979e8dadff59ad17d6be5f")
+                .setApplicationId(BuildConfig.UP_FIREBASE_APP_ID)
                 .setApiKey("AIzaSyBkCcdbR8Z9V9DB0wAJfC_YiRaNe8nnaA4")
                 .setProjectId("rodrigues-d6566")
                 .setGcmSenderId("1010835711502")

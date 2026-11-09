@@ -19,6 +19,7 @@ import org.json.JSONObject;
 public final class PushService extends FirebaseMessagingService {
     @Override public void onNewToken(String token) {
         super.onNewToken(token);
+        if (!BuildConfig.UP_FIREBASE_ANDROID_REGISTERED) return;
         if (token==null || token.isEmpty() ||
             FirebaseAuth.getInstance().getCurrentUser()==null) return;
         new Backend().driver("token",Backend.args("token",token),new Backend.Callback(){
@@ -29,6 +30,7 @@ public final class PushService extends FirebaseMessagingService {
 
     @Override public void onMessageReceived(RemoteMessage message) {
         super.onMessageReceived(message);
+        if (!BuildConfig.UP_FIREBASE_ANDROID_REGISTERED) return;
         if(FirebaseAuth.getInstance().getCurrentUser()==null)return;
         if(Build.VERSION.SDK_INT>=33
           && ContextCompat.checkSelfPermission(this,Manifest.permission.POST_NOTIFICATIONS)

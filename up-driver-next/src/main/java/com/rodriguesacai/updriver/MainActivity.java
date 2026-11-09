@@ -606,7 +606,9 @@ public final class MainActivity extends ComponentActivity {
             FirebaseAuth.getInstance().getCurrentUser().getEmail();
         text(c,email==null?"—":email,15,INK,true);gap(c,7);
         text(c,"Cadastro: aprovado pelo UP Gestor",13,GREEN,false);
-        button(c,"Reativar notificações de ofertas",BLUE,false,this::requestNotifications);
+        if (BuildConfig.UP_FIREBASE_ANDROID_REGISTERED)
+            button(c,"Reativar notificações de ofertas",BLUE,false,this::requestNotifications);
+        else text(c,"FCM ainda não homologado para este pacote Android. A versão de prévia não promete notificações push.",13,MUTED,false);
         text(c,"Para alterar dados de um cadastro aprovado, solicite revisão ao UP Gestor.",13,MUTED,false);
         button(c,"Sair com segurança",Color.rgb(245,231,231),true,this::signOut);
         LinearLayout i=card();
@@ -686,6 +688,8 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void registerPush() {
+        // A separate Android Firebase app registration is mandatory for reliable FCM.
+        if (!BuildConfig.UP_FIREBASE_ANDROID_REGISTERED) return;
         if(Build.VERSION.SDK_INT>=33 &&
            ContextCompat.checkSelfPermission(this,Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED) {
             requestNotifications();return;
@@ -700,6 +704,9 @@ public final class MainActivity extends ComponentActivity {
         });
     }
     private void requestNotifications() {
+        if (!BuildConfig.UP_FIREBASE_ANDROID_REGISTERED) {
+            inform("O Android deste novo UP ainda precisa ser registrado no Firebase.");return;
+        }
         if(Build.VERSION.SDK_INT>=33 &&
           ContextCompat.checkSelfPermission(this,Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this,new String[]{Manifest.permission.POST_NOTIFICATIONS},NOTIFICATION_PERMISSION);

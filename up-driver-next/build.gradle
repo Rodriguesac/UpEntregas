@@ -15,6 +15,17 @@ android {
         buildConfigField 'String', 'UP_DRIVER_ENDPOINT', '"https://gkwmqwtktedarodvqqtn.supabase.co/functions/v1/driver-api-independent"'
         buildConfigField 'String', 'UP_REGISTRATION_ENDPOINT', '"https://gkwmqwtktedarodvqqtn.supabase.co/functions/v1/driver-registration-independent"'
         buildConfigField 'String', 'UP_PUBLISHABLE_KEY', '"sb_publishable_-G8dzZ51cG9ZTdVviPAQdQ_9oSnwCyG"'
+        // A preview can log into the shared Firebase Auth project, but must NOT
+        // pretend to have its own registered Android app or working FCM.
+        def previewAppId = '1:1010835711502:android:979e8dadff59ad17d6be5f'
+        def suppliedAppId = (project.findProperty('upFirebaseAppId') ?: '').toString().trim()
+        if (suppliedAppId && !(suppliedAppId ==~ /1:1010835711502:android:[A-Fa-f0-9]{16,}/)
+                || suppliedAppId == previewAppId) {
+            throw new GradleException('UP Firebase App ID: informe o ID NOVO do pacote Android independente, nunca o do app antigo.')
+        }
+        def firebaseAppId = suppliedAppId ?: previewAppId
+        buildConfigField 'String', 'UP_FIREBASE_APP_ID', '"' + firebaseAppId + '"'
+        buildConfigField 'boolean', 'UP_FIREBASE_ANDROID_REGISTERED', (!suppliedAppId.isEmpty()).toString()
     }
 
     buildFeatures { buildConfig true }
