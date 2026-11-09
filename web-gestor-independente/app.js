@@ -221,7 +221,8 @@ function renderJobs(){
  const rows=jobs.filter(j=>f==="all"||(f==="active"&&!["DELIVERED","FAILED","CANCELLED"].includes(j.status))||
   (f==="waiting"&&["WAITING_DRIVER","OFFERED"].includes(j.status))||
   (f==="done"&&["DELIVERED","FAILED","CANCELLED"].includes(j.status)));
- $("#main").innerHTML='<p class="page-intro">Gestão de corridas, ofertas e andamento. O pedido e o pagamento do cliente continuam na loja.</p>'+
+ $("#main").innerHTML='<p class="page-intro">Gestão de corridas, ofertas e andamento. O pedido e o pagamento do cliente continuam na loja.</p>'+ 
+ (isDispatcher()?'<div class="actions"><button class="button primary" data-action="new-job">Solicitar entrega para uma loja</button></div>':"")+
  '<div class="chips">'+[
   ["all","Todas"],["active","Ativas"],["waiting","Aguardando"],["done","Finalizadas"]
  ].map(([id,name])=>'<button class="chip '+(id===f?"on":"")+'" data-action="filter" data-filter="'+id+'">'+name+'</button>').join("")+'</div>'+
@@ -385,6 +386,48 @@ async function jobDetail(jobId){
  " — "+escapeHtml(label(x.status))+'</strong> • '+date(x.occurred_at)+'</p>').join(""):empty("Nenhum evento."));
  dialog("Detalhes da corrida",info+offers+events);
 }
+async function manualJobDialog(){
+ const result=await call("merchant_locations");
+ const points=(result.merchants||[]).flatMap(m=>(m.locations||[]).map(l=>({
+  value:m.id+":"+l.id,label:m.display_name+" — "+l.label+" ("+(l.city||"Sem cidade")+")"
+ })));
+ if(!points.length){notice("Nenhuma loja ativa possui ponto de retirada ativo.",true);return;}
+ const requestId=crypto.randomUUID();
+ const opts=points.map(p=>'<option value="'+p.value+'">'+escapeHtml(p.label)+'</option>').join("");
+ const field=(id,label,max=120,extra="")=>
+  '<label for="'+id+'">'+label+'</label><input class="field" id="'+id+'" maxlength="'+max+'" autocomplete="off" '+extra+'>';
+ dialog("Solicitar entrega",
+  '<div class="warning-note">Sem cobrança automática. O preço do frete ainda depende da configuração de tarifas.</div>'+
+  '<label for="manualPickup">Loja e ponto de coleta</label><select class="field" id="manualPickup">'+opts+'</select>'+
+  field("manualCode","Número do pedido (somente números)",32,'inputmode="numeric"')+
+  field("manualCustomer","Nome do cliente",150)+
+  field("manualPhone","Telefone do cliente",20,'type="tel" inputmode="tel"')+
+  field("manualStreet","Rua de entrega",180)+field("manualNumber","Número",20)+
+  field("manualNeighborhood","Bairro",120)+field("manualCity","Cidade",120)+
+  field("manualState","UF",2,'placeholder="MS"'),
+  "Criar solicitação",async()=>{
+   const [merchant_id,location_id]=$("#manualPickup").value.split(":");
+   const order_code=text($("#manualCode").value);
+   const recipient_name=text($("#manualCustomer").value);
+   const recipient_phone=text($("#manualPhone").value).replace(/\D/g,"");
+   const dropoff={
+    street:text($("#manualStreet").value),number:text($("#manualNumber").value),
+    neighborhood:text($("#manualNeighborhood").value),city:text($("#manualCity").value),
+    state:text($("#manualState").value).toUpperCase()
+   };
+   if(!/^\d{3,32}$/.test(order_code))throw Error("Número de pedido inválido: use somente 3 a 32 dígitos.");
+   if(recipient_name.length<2||recipient_phone.length<10||recipient_phone.length>15||
+      dropoff.street.length<3||dropoff.city.length<2)
+    throw Error("Preencha nome, telefone, rua e cidade.");
+   if(!confirm("Solicitar entrega sem cobrança automática?"))return false;
+   const r=await call("create_manual_job",{
+    merchant_id,location_id,request_id:requestId,order_code,recipient_name,recipient_phone,dropoff
+   });
+   if(!r.job?.job_id)throw Error("UP não confirmou a solicitação.");
+   notice(r.job.already_applied?"Solicitação existente confirmada.":"Solicitação registrada no UP.");
+   await load("jobs");
+  });
+}
 async function offerDialog(jobId){
  const r=await call("couriers_list");
  const couriers=r.couriers.filter(x=>x.state==="APPROVED"&&x.online);
@@ -497,6 +540,7 @@ document.addEventListener("click",async event=>{
  if(STORE.busy)return;
  try{
   if(action==="view-job")await jobDetail(target.dataset.id);
+  else if(action==="new-job")await manualJobDialog();
   else if(action==="send-offer")await offerDialog(target.dataset.id);
   else if(action==="review-application")await reviewDialog(target.dataset.id);
   else if(action==="driver-state")await driverState(target.dataset.id,target.dataset.state,target.dataset.reviewRequired==="true");
