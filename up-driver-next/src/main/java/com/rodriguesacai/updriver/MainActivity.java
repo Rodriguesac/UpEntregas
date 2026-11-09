@@ -17,6 +17,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -132,14 +133,12 @@ public final class MainActivity extends ComponentActivity {
         top.setGravity(Gravity.CENTER_VERTICAL);
         top.setOrientation(LinearLayout.HORIZONTAL);
         top.setBackgroundColor(NAVY);
-        TextView logo = new TextView(this);
-        logo.setText("UP");
-        logo.setTextColor(NAVY);
-        logo.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        logo.setTextSize(21);
-        logo.setGravity(Gravity.CENTER);
-        logo.setBackground(background(AMBER,11));
-        top.addView(logo,new LinearLayout.LayoutParams(dp(48),dp(48)));
+        // Reuse the UP identity shipped with the legacy courier application.
+        ImageView logo = new ImageView(this);
+        logo.setContentDescription("Logo UP Entregas");
+        logo.setImageResource(R.drawable.up_app_icon);
+        logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        top.addView(logo,new LinearLayout.LayoutParams(dp(52),dp(52)));
         LinearLayout titles = new LinearLayout(this);
         titles.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(0,-2,1);

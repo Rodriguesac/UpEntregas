@@ -12,7 +12,7 @@
         android:allowBackup="false"
         android:usesCleartextTraffic="false"
         android:theme="@style/Theme.UpDriver"
-        android:icon="@drawable/up_icon">
+        android:icon="@drawable/up_app_icon">
         <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
