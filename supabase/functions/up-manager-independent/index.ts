@@ -77,7 +77,7 @@ Deno.serve(async req=>{
     {id:"status_endpoint",label:"Destino de retorno à loja",ready:txt(Deno.env.get("UP_STATUS_STORE_ENDPOINT"))==="https://fdqqwdplprzpqufpgdrm.supabase.co/functions/v1/up-status-receiver"},
     {id:"status_worker",label:"Autorização do retorno",ready:configured("UP_STATUS_WORKER_TOKEN",32)},
     {id:"manager_origin",label:"Domínio permitido do painel",ready:txt(Deno.env.get("UP_MANAGER_ALLOWED_ORIGINS")).split(",").some(s=>s.trim().startsWith("https://"))},
-    {id:"firebase",label:"Identidade Firebase",ready:txt(Deno.env.get("UP_FIREBASE_PROJECT_ID"))==="rodrigues-d6566"},
+    {id:"firebase",label:"Firebase próprio do UP",ready:configured("UP_FIREBASE_PROJECT_ID",5)&&txt(Deno.env.get("UP_FIREBASE_PROJECT_ID"))!=="rodrigues-d6566"},
     {id:"customer_origin",label:"Domínio permitido do cliente",ready:txt(Deno.env.get("UP_CUSTOMER_ALLOWED_ORIGINS")).split(",").some(s=>s.trim()==="https://rodriguesacaiecia.web.app")},
     {id:"fcm",label:"Serviço de notificações",ready:configured("UP_FCM_SERVICE_ACCOUNT_JSON",50)&&configured("UP_PUSH_WORKER_TOKEN",32)}
    ];
