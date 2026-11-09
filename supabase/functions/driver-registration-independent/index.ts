@@ -24,8 +24,6 @@ const stateToApp=(s:unknown)=>({PENDING:"pending",APPROVED:"approved",
 Deno.serve(async req=>{
  if(req.method!=="POST")return json({ok:false,error:"method_not_allowed"},405);
  if(req.headers.has("origin"))return json({ok:false,error:"native_app_only"},403);
- if(Deno.env.get("UP_INDEPENDENT_REGISTRATION_ENABLED")!=="true")
-  return json({ok:false,error:"independent_registration_disabled"},503);
  const url=Deno.env.get("SUPABASE_URL"),service=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
  if(!url||!service)return json({ok:false,error:"service_not_configured"},503);
  const token=txt(req.headers.get("authorization")).replace(/^Bearer\s+/i,"");
@@ -53,10 +51,18 @@ Deno.serve(async req=>{
    const courier=await db.from("up_couriers").select("state,online")
     .eq("firebase_uid",uid).maybeSingle();
    if(courier.error)throw courier.error;
-   const status=courier.data?.state==="APPROVED"?"approved":
-    stateToApp(existing.data?.state);
+   // A suspended/rejected courier must never appear approved because
+   // an older application has an APPROVED state.
+   const courierState=txt(courier.data?.state).toUpperCase();
+   const status=courierState==="APPROVED"?"approved":
+    courierState==="SUSPENDED"?"suspended":
+    courierState==="REJECTED"?"rejected":stateToApp(existing.data?.state);
    return json({ok:true,status,online:courier.data?.online===true});
   }
+  // Read-only status remains available while enrollment is disabled.
+  // Every mutating action below still requires the private activation flag.
+  if(Deno.env.get("UP_INDEPENDENT_REGISTRATION_ENABLED")!=="true")
+   return json({ok:false,error:"independent_registration_disabled"},503);
   if(action==="submit"){
    const profile=obj(body.profile);
    const fullName=txt(profile.nomeCompleto||profile.nome).slice(0,150);
@@ -65,7 +71,9 @@ Deno.serve(async req=>{
     ok:false,error:"name_and_phone_required"
    },422);
    const previous=txt(existing.data?.state);
-   const status=previous==="APPROVED"?"NEEDS_CORRECTION":"PENDING";
+   if(previous==="APPROVED")
+    return json({ok:false,error:"approved_profile_requires_manager_review"},409);
+   const status="PENDING";
    const documents={
     ...obj(existing.data?.documents),
     cpf:txt(profile.cpf).replace(/[^0-9]/g,"").slice(0,11),
@@ -85,6 +93,8 @@ Deno.serve(async req=>{
   }
   if(action==="documents_update"){
    if(!existing.data)return json({ok:false,error:"application_not_found"},404);
+   if(existing.data.state==="APPROVED")
+    return json({ok:false,error:"approved_profile_requires_manager_review"},409);
    const updatedDocs={...obj(existing.data.documents),
     photo_url:asUrl(body.photo_url),document_url:asUrl(body.document_url)};
    const update=await db.from("up_courier_applications")
