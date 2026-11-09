@@ -34,6 +34,22 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+      - name: Preparar Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validar isolamento, autorizacao e cadastro independente
+        run: |
+          node scripts/test-up-independent-driver.mjs
+          node scripts/test-up-independent-registration.mjs
+      - name: Preparar Deno 2
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Verificar tipos das APIs independentes
+        run: |
+          deno check supabase/functions/driver-api-independent/index.ts
+          deno check supabase/functions/driver-registration-independent/index.ts
       - name: Compilar SOMENTE app novo e independente
         run: gradle :up-driver-next:assembleDebug --stacktrace
       - name: Analisar erros Android lint
