@@ -29,6 +29,7 @@ function addressText(address:any){
 function document(job:any,offered:boolean){
  const origin=obj(job.pickup),dest=obj(job.dropoff);
  const state=offered?"OFFER_PENDING":txt(job.status);
+ const merchantName=txt(obj(job.up_merchants).display_name)||txt(origin.name)||txt(origin.business_name)||"Estabelecimento";
  const data={
   source:"supabase",missionType:"SUPABASE_ORDER",
   pedidoId:job.merchant_order_id,orderId:job.id,
@@ -38,7 +39,7 @@ function document(job:any,offered:boolean){
   clienteEnderecoCompleto:addressText(dest),deliveryAddress:addressText(dest),
   destinoEndereco:addressText(dest),enderecoCliente:addressText(dest),
   enderecoLoja:addressText(origin),coletaEndereco:addressText(origin),
-  coletaNome:"Rodrigues Açaí e Cia",lojaNome:"Rodrigues Açaí e Cia",
+  coletaNome:merchantName,lojaNome:merchantName,
   clienteLat:loc(obj(dest.location),"lat"),clienteLng:loc(obj(dest.location),"lng"),
   destinoLat:loc(obj(dest.location),"lat"),destinoLng:loc(obj(dest.location),"lng"),
   lojaLat:loc(obj(origin.location),"lat"),lojaLng:loc(obj(origin.location),"lng"),
@@ -92,6 +93,10 @@ Deno.serve(async(req:Request)=>{
   if(!courier||courier.state!=="APPROVED")return reply({ok:false,error:"driver_not_approved"},403);
   const missionId=parseId(body.mission_id||body.order_id);
   const now=new Date().toISOString();
+  // Read-only mobile session: never trusts courier identifiers supplied by the caller.
+  if(action==="session"){
+   return reply({ok:true,online:courier.online===true,state:courier.state});
+  }
   if(action==="presence"){
    const upd=await admin.from("up_couriers").update({online:body.online===true,updated_at:now})
     .eq("id",courier.id);if(upd.error)throw upd.error;
@@ -120,7 +125,7 @@ Deno.serve(async(req:Request)=>{
    return reply({ok:true});
   }
   if(action==="offer"){
-   const current=await admin.from("up_jobs").select("*").eq("assigned_courier_id",courier.id)
+   const current=await admin.from("up_jobs").select("*,up_merchants!up_jobs_merchant_id_fkey(display_name)").eq("assigned_courier_id",courier.id)
     .not("status","in",'("DELIVERED","CANCELLED","FAILED")')
     .order("updated_at",{ascending:false}).limit(1);
    if(current.error)throw current.error;
@@ -131,21 +136,36 @@ Deno.serve(async(req:Request)=>{
    if(offers.error)throw offers.error;
    if(!offers.data?.length)return reply({ok:true,document:null});
    const ids=offers.data.map((x:any)=>x.job_id);
-   const jobs=await admin.from("up_jobs").select("*").in("id",ids)
+   const jobs=await admin.from("up_jobs").select("*,up_merchants!up_jobs_merchant_id_fkey(display_name)").in("id",ids)
     .eq("status","OFFERED").is("assigned_courier_id",null);
    if(jobs.error)throw jobs.error;
    const job=offers.data.map((o:any)=>jobs.data?.find((j:any)=>j.id===o.job_id)).find(Boolean);
    return reply({ok:true,document:job?document(job,true):null});
   }
   if(action==="history"){
-   const hist=await admin.from("up_jobs").select("*").eq("assigned_courier_id",courier.id)
+   const hist=await admin.from("up_jobs").select("*,up_merchants!up_jobs_merchant_id_fkey(display_name)").eq("assigned_courier_id",courier.id)
     .order("updated_at",{ascending:false}).limit(40);
    if(hist.error)throw hist.error;
    return reply({ok:true,documents:(hist.data||[]).map((x:any)=>document(x,false))});
   }
+  // Financial records are scoped exclusively to the UID-verified courier.
+  // Read only: no payouts or money movements can be created by the mobile app.
+  if(action==="wallet"){
+   const [entries,payouts]=await Promise.all([
+    admin.from("up_wallet_transactions")
+     .select("id,kind,amount,description,created_at")
+     .eq("courier_id",courier.id).order("created_at",{ascending:false}).limit(100),
+    admin.from("up_payouts")
+     .select("id,amount,status,requested_at,paid_at")
+     .eq("courier_id",courier.id).order("requested_at",{ascending:false}).limit(50)
+   ]);
+   if(entries.error)throw entries.error;
+   if(payouts.error)throw payouts.error;
+   return reply({ok:true,transactions:entries.data||[],payouts:payouts.data||[]});
+  }
   if(!uuid.test(missionId))return reply({ok:false,error:"mission_required"},400);
   const getJob=async()=>{
-   const r=await admin.from("up_jobs").select("*").eq("id",missionId).maybeSingle();
+   const r=await admin.from("up_jobs").select("*,up_merchants!up_jobs_merchant_id_fkey(display_name)").eq("id",missionId).maybeSingle();
    if(r.error)throw r.error;return r.data;
   };
   const ownJob=async()=>{
