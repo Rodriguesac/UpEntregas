@@ -1,4 +1,5 @@
 name: Compilar UP Entregador Next (independente)
+# Rebuild da branch com a logo original amarela UP Entregas (09-11-2026)
 
 on:
   push:
