@@ -300,7 +300,7 @@ public final class MainActivity extends ComponentActivity {
         approved=false;screen="pending";
         verification="pending".equals(status)?"Sua inscrição aguarda análise do gestor."
             :"correction".equals(status)?"O gestor solicitou correção do cadastro."
-            :"rejected".equals(status)?"Seu cadastro não foi aprovado."
+            :"suspended".equals(status)?"Seu cadastro foi suspenso. Entre em contato com o gestor."\n            :"rejected".equals(status)?"Seu cadastro não foi aprovado."
             :"Nenhum cadastro encontrado. Envie seus dados para análise.";
         render();
     }
@@ -607,9 +607,7 @@ public final class MainActivity extends ComponentActivity {
         text(c,email==null?"—":email,15,INK,true);gap(c,7);
         text(c,"Cadastro: aprovado pelo UP Gestor",13,GREEN,false);
         button(c,"Reativar notificações de ofertas",BLUE,false,this::requestNotifications);
-        button(c,"Atualizar cadastro",Color.rgb(231,239,252),true,()->{
-            screen="registration";notice="";render();
-        });
+        text(c,"Para alterar dados de um cadastro aprovado, solicite revisão ao UP Gestor.",13,MUTED,false);
         button(c,"Sair com segurança",Color.rgb(245,231,231),true,this::signOut);
         LinearLayout i=card();
         text(i,"Privacidade do GPS",17,INK,true);gap(i,6);
