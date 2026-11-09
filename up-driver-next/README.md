@@ -36,3 +36,35 @@ O build é de **prévia técnica**. Antes de liberar corridas reais:
 
 A chave `sb_publishable_` do BuildConfig é pública; todas as credenciais privilegiadas
 permanecem nas Edge Functions.
+
+## Implementado nesta branch
+
+- App **novo** de pacote separado com Material 3, identidade visual UP e telas próprias.
+- Login via Firebase, formulário de candidatura, aprovação pendente, estado online/offline.
+- Ofertas reais por entregador, aceite/recusa, etapas de entrega e confirmação de código.
+- Endereço de retirada/entrega e navegação ao Google Maps sob ação explícita.
+- GPS de missão via foreground service, limites de atualização e recusa de acesso sem autorização.
+- Push FCM com registro do token verificado no backend; consulta a cada 20 s como contingência.
+- Histórico de corridas, ocorrências, leitura de lançamentos financeiros e repasses.
+- Sessão e disponibilidade sincronizadas com o servidor; `driver-api-independent` v14.
+- Cadastro independente via `driver-registration-independent` v2.
+- Pacote antigo `:app` permanece intacto e não é substituído.
+- Build de prévia em `.github/workflows/build-up-driver-next.yml`.
+
+## Aceitação operacional (sem dados falsos)
+
+- [ ] Instalar APK novo ao lado do antigo no Android.
+- [ ] Registrar applicationId próprio e SHA da assinatura no Firebase; confirmar Auth e FCM.
+- [ ] Verificar JWT do entregador e cadastrar documentação real para revisão do gestor.
+- [ ] Conferir documentos e aprovar apenas o entregador de teste.
+- [ ] Habilitar gradualmente as flags privadas da infraestrutura UP.
+- [ ] Deixar online e confirmar presença correta após reinicializar o Android.
+- [ ] Despachar somente um pedido de teste, pago/validado e com endereço de coleta ativo.
+- [ ] Receber oferta, aceitar e conferir atribuição exclusiva.
+- [ ] Concluir cinco etapas na ordem sem duplicar eventos, incluindo código e cobrança se aplicáveis.
+- [ ] Confirmar GPS visível apenas na missão, permissão recusada e desligamento automático.
+- [ ] Verificar histórico do entregador e extrato sem mostrar dados de outros motoristas.
+- [ ] Confirmar callback assinado para a loja, push ao cliente e acompanhamento por ticket temporário.
+- [ ] Assinar APK de lançamento com chave de produção (não reutilizar debug) e promover com rollback.
+
+**Não expor segredos no APK. Não ativar corrida real sem essa validação ponta a ponta.**
