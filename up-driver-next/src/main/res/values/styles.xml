@@ -1,0 +1,12 @@
+<resources>
+    <style name="Theme.UpDriver" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">#2164CE</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorSecondary">#F5B942</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">#F6F8FD</item>
+        <item name="android:navigationBarColor">#F6F8FD</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:fontFamily">sans</item>
+    </style>
+</resources>
