@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import {createClient} from "npm:@supabase/supabase-js@2.56.1";
 import {createRemoteJWKSet,jwtVerify} from "npm:jose@5.9.6";
+import {shouldBlockNewOffer,MIN_BATTERY_PERCENT} from "./battery-policy.mjs";
 
 // STAGING ONLY. Independent UP project; NEVER deploy over the production
 // driver-api until its Firebase, app, manager and delivery tests are approved.
@@ -188,6 +189,9 @@ Deno.serve(async(req:Request)=>{
    return reply({ok:true,document:document(job,true)});
   }
   if(action==="accept"){
+   // Apenas novas ofertas: corridas ja aceitas nunca sao interrompidas por bateria baixa.
+   if(shouldBlockNewOffer(courier.metadata))
+    return reply({ok:false,error:"battery_below_minimum",minimum_battery_percent:MIN_BATTERY_PERCENT},409);
    const offer=await admin.from("up_dispatch_offers").select("id")
     .eq("job_id",missionId).eq("courier_id",courier.id)
     .eq("status","PENDING").gt("expires_at",now).limit(1);
