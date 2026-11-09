@@ -6,6 +6,7 @@ on:
     paths:
       - 'web-gestor-independente/**'
       - 'scripts/test-up-manager-independent.mjs'
+      - 'scripts/test-up-bridge-probe.mjs'
       - '.github/workflows/package-up-gestor-netlify.yml'
 permissions:
   contents: write
@@ -26,6 +27,7 @@ jobs:
           set -euo pipefail
           node --check web-gestor-independente/app.js
           node scripts/test-up-manager-independent.mjs
+          node scripts/test-up-bridge-probe.mjs
       - name: Montar pacote de instalação SEM segredos
         shell: bash
         run: |
