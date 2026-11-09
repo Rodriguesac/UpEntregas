@@ -28,6 +28,7 @@ on:
       - 'scripts/test-up-independent-driver.mjs'
       - 'scripts/test-up-independent-registration.mjs'
       - 'scripts/test-up-manager-independent.mjs'
+      - 'scripts/test-up-bridge-probe.mjs'
       - 'scripts/verify-up-manager-postgres.sh'
       - 'scripts/verify-up-driver-postgres.sh'
       - 'scripts/verify-up-e2e.sh'
@@ -94,6 +95,7 @@ jobs:
           node scripts/test-up-independent-driver.mjs
           node scripts/test-up-independent-registration.mjs
           node scripts/test-up-manager-independent.mjs
+          node scripts/test-up-bridge-probe.mjs
       - name: Validar SQL em PostgreSQL descartável
         run: |
           if ! command -v psql >/dev/null 2>&1; then
