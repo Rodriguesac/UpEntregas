@@ -310,15 +310,25 @@ function renderIntegrations(){
  const info=STORE.data.integrations||{};
  const checks=Array.isArray(info.checks)?info.checks:[];
  const flags=Array.isArray(info.flags)?info.flags:[];
+ const probe=info.probe||null;
  const renderEntry=(label,active,readyLabel,waitingLabel)=>
   '<article class="record"><div class="record-head"><h3>'+escapeHtml(label||"Integração")+
   '</h3><span class="pill '+(active?"good":"wait")+'">'+(active?readyLabel:waitingLabel)+'</span></div></article>';
- $("#main").innerHTML='<p class="page-intro">Diagnóstico exclusivo do administrador. Segredos não são mostrados, e a configuração do banco da loja deve ser validada separadamente.</p>'+
+ const summary=probe?('<div class="record-grid">'+
+  renderEntry("Assinatura entre UP e loja",probe.connection_ok===true,"Conectados","Não verificado")+
+  renderEntry("Retorno automático de status",probe.callback_enabled===true,"Habilitado","Desativado")+
+  '</div><p class="small">'+escapeHtml(probe.message||"")+'</p>'):
+  '<div class="warning-note">A chave pode estar cadastrada, mas a comunicação entre os dois projetos ainda não foi testada.</div>';
+ $("#main").innerHTML='<p class="page-intro">Diagnóstico exclusivo do administrador. As chaves e dados dos clientes não aparecem aqui.</p>'+
+ '<div class="section-head"><h2>Teste de comunicação UP ↔ Loja</h2></div>'+
+ '<div class="actions"><button type="button" class="button primary" data-action="probe-integration">Testar conexão segura</button></div>'+
+ '<p class="small">Teste criptográfico de leitura: não cria corrida, não altera pedido e não habilita entregas.</p>'+
+ summary+
  '<div class="section-head"><h2>Integrações privadas</h2></div><div class="record-grid">'+
  (checks.map(x=>renderEntry(x.label,x.ready===true,"Configurado","Pendente")).join("")||empty("Nenhuma integração listada."))+'</div>'+
  '<div class="section-head"><h2>Ativação operacional</h2></div><div class="record-grid">'+
  (flags.map(x=>renderEntry(x.label,x.enabled===true,"Habilitado","Desativado")).join("")||empty("Nenhum recurso listado."))+'</div>'+
- '<div class="warning-note">A ativação técnica não comprova uma entrega real. O lançamento exige validação do Android, autorização dos entregadores, pagamento e callback à loja.</div>';
+ '<div class="warning-note">Conexão válida não comprova uma entrega real. O lançamento depende de teste completo do Android, autorização dos entregadores e callback à loja.</div>';
 }
 function renderMore(){
  $("#main").innerHTML='<p class="page-intro">Cada função administrativa está organizada na área correspondente.</p>'+
@@ -468,6 +478,20 @@ document.addEventListener("click",async event=>{
  if(action==="close-dialog"){closeDialog();return}
  if(action==="logout"){clearSession();return}
  if(action==="refresh"){await load();return}
+ if(action==="probe-integration"){
+  if(STORE.busy)return;
+  STORE.busy=true;target.disabled=true;target.textContent="Verificando assinatura…";
+  try{
+   const result=await call("integration_probe");
+   STORE.data.integrations=STORE.data.integrations||{};
+   STORE.data.integrations.probe=result.probe||null;
+   renderIntegrations();
+   notice(result.probe?.message||"Verificação concluída.",result.probe?.connection_ok!==true);
+  }catch(error){notice(error.message||"Falha no teste de comunicação.",true)}
+  finally{STORE.busy=false;target.disabled=false;}
+  return;
+ }
+
  if(action==="go"){STORE.filter="all";await navigate(target.dataset.page);return}
  if(action==="filter"){STORE.filter=target.dataset.filter;render();return}
  if(STORE.busy)return;
