@@ -21,7 +21,7 @@ for(const t of [
  'destination!==expected','crypto.subtle.sign("HMAC"',
  '"x-up-timestamp":timestamp','"x-up-signature":hex',
  'signal:AbortSignal.timeout(9000)',
- 'action:"bridge_probe"', 'status:"signed_connection_ok"',
+ 'action:"bridge_probe"', 'status:connected?"signed_connection_ok"',
  'signature_mismatch'
 ])assert.ok(manager.includes(t),"Manager sem proteção: "+t);
 assert.ok(ui.includes('data-action="probe-integration"'));
