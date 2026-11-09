@@ -4,7 +4,7 @@ BEGIN;
 DO $manual$
 declare
  m uuid;
- pickup uuid;
+ v_pickup uuid;
  req uuid:=gen_random_uuid();
  j uuid;
  j2 uuid;
@@ -20,17 +20,17 @@ begin
  insert into public.up_merchant_locations(
   merchant_id,label,street,number,city,state_code,latitude,longitude,state,is_default)
  values(m,'Ponto Teste','Rua da Loja','100','Campo Grande','MS',-20.4,-54.6,'ACTIVE',true)
- returning id into pickup;
+ returning id into v_pickup;
  select job_id,job_status,already_applied into j,st,created
  from public.up_manager_manual_job(
-  m,pickup,req,'900020',
+  m,v_pickup,req,'900020',
   '{"street":"Rua Destino","number":"35","city":"Campo Grande"}'::jsonb,
   'Pessoa de Teste','67999999999','firebase-test-owner',repeat('a',64));
  if j is null or st <> 'WAITING_DRIVER' or created is distinct from false
  then raise exception 'manual_create_failed';end if;
  select job_id,already_applied into j2,retry
  from public.up_manager_manual_job(
-  m,pickup,req,'900020',
+  m,v_pickup,req,'900020',
   '{"street":"Rua Destino","number":"35","city":"Campo Grande"}'::jsonb,
   'Pessoa de Teste','67999999999','firebase-test-owner',repeat('a',64));
  if j2 is distinct from j or retry is distinct from true
@@ -38,7 +38,7 @@ begin
  select count(*) into n from public.up_jobs where merchant_order_id=req;
  if n<>1 then raise exception 'manual_duplicate_created';end if;
  if not exists (select 1 from public.up_jobs
-  where id=j and merchant_id=m and merchant_location_id=pickup
+  where id=j and merchant_id=m and merchant_location_id=v_pickup
   and pickup->>'name'='Rodrigues Açaí e Cia'
   and pickup->'location'->>'lat' is not null
   and metadata->>'billing_status'='NOT_QUOTED') then
@@ -52,7 +52,7 @@ begin
  deny:=false;
  begin
   perform public.up_manager_manual_job(
-   m,pickup,req,'900020',
+   m,v_pickup,req,'900020',
    '{"street":"Rua Alterada","city":"Campo Grande"}'::jsonb,
    'Pessoa de Teste','67999999999','firebase-test-owner',repeat('b',64));
  exception when others then
@@ -64,7 +64,7 @@ begin
  deny:=false;
  begin
   perform public.up_manager_manual_job(
-   m,pickup,gen_random_uuid(),'900021',
+   m,v_pickup,gen_random_uuid(),'900021',
    '{"street":"Rua Destino","city":"Campo Grande"}'::jsonb,
    'Pessoa de Teste','67999999999','firebase-test-owner',repeat('c',64));
  exception when others then
@@ -75,7 +75,7 @@ begin
  -- Status retry of an existing request remains readable after suspension.
  select already_applied into retry
  from public.up_manager_manual_job(
-  m,pickup,req,'900020',
+  m,v_pickup,req,'900020',
   '{"street":"Rua Destino","number":"35","city":"Campo Grande"}'::jsonb,
   'Pessoa de Teste','67999999999','firebase-test-owner',repeat('a',64));
  if retry is distinct from true then raise exception 'manual_retry_after_suspension';end if;
