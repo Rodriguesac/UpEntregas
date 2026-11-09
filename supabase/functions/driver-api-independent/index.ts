@@ -147,6 +147,21 @@ Deno.serve(async(req:Request)=>{
    if(hist.error)throw hist.error;
    return reply({ok:true,documents:(hist.data||[]).map((x:any)=>document(x,false))});
   }
+  // Financial records are scoped exclusively to the UID-verified courier.
+  // Read only: no payouts or money movements can be created by the mobile app.
+  if(action==="wallet"){
+   const [entries,payouts]=await Promise.all([
+    admin.from("up_wallet_transactions")
+     .select("id,kind,amount,description,created_at")
+     .eq("courier_id",courier.id).order("created_at",{ascending:false}).limit(100),
+    admin.from("up_payouts")
+     .select("id,amount,status,requested_at,paid_at")
+     .eq("courier_id",courier.id).order("requested_at",{ascending:false}).limit(50)
+   ]);
+   if(entries.error)throw entries.error;
+   if(payouts.error)throw payouts.error;
+   return reply({ok:true,transactions:entries.data||[],payouts:payouts.data||[]});
+  }
   if(!uuid.test(missionId))return reply({ok:false,error:"mission_required"},400);
   const getJob=async()=>{
    const r=await admin.from("up_jobs").select("*").eq("id",missionId).maybeSingle();
