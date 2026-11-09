@@ -144,7 +144,7 @@ public final class MainActivity extends ComponentActivity {
         titleLp.leftMargin = dp(13);
         top.addView(titles,titleLp);
         text(titles,"UP ENTREGADOR",19,WHITE,true);
-        text(titles,"Sua próxima entrega, sem complicação",11,Color.rgb(191,211,238),false);
+        text(titles,"Corridas e GPS em tempo real",11,Color.rgb(191,211,238),false);
         TextView version = new TextView(this);
         version.setText("v" + BuildConfig.VERSION_NAME);
         version.setTextSize(10);
@@ -269,13 +269,14 @@ public final class MainActivity extends ComponentActivity {
         verification="Verificando situação do cadastro...";
         screen="pending";render();
         backend.registration("status_sync", Backend.args(), new Backend.Callback() {
-            @Override public void onSuccess(JSONObject data) { accountState(data.optString("status","missing")); }
+            @Override public void onSuccess(JSONObject data) { online=data.optBoolean("online",false); accountState(data.optString("status","missing")); }
             @Override public void onError(String message) {
                 // Older imported couriers may be approved before independent registration is enabled.
-                backend.driver("offer",Backend.args(),new Backend.Callback(){
+                backend.driver("session",Backend.args(),new Backend.Callback(){
                     @Override public void onSuccess(JSONObject response) {
+                        online=response.optBoolean("online",false);
                         approved=true;screen="home";notice="";
-                        updateMission(response.optJSONObject("document"));registerPush();render();beginPolling();
+                        registerPush();render();refreshOffer(false);beginPolling();
                     }
                     @Override public void onError(String other) {
                         approved=false;screen="pending";
@@ -664,7 +665,11 @@ public final class MainActivity extends ComponentActivity {
     private void stopLocation(){stopService(new Intent(this,LocationService.class));}
     @Override public void onRequestPermissionsResult(int req,String[] permissions,int[] grants){
         super.onRequestPermissionsResult(req,permissions,grants);
-        if(req==LOCATION_PERMISSION)startLocationIfAllowed();
+        if(req==LOCATION_PERMISSION) {
+            boolean allowed=ContextCompat.checkSelfPermission(this,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED || ContextCompat.checkSelfPermission(this,Manifest.permission.ACCESS_COARSE_LOCATION)==PackageManager.PERMISSION_GRANTED;
+            if(allowed)startLocationIfAllowed();
+            else inform("Permissão negada. Sem GPS, o acompanhamento da entrega não funcionará.");
+        }
         if(req==NOTIFICATION_PERMISSION && grants.length>0 && grants[0]==PackageManager.PERMISSION_GRANTED)registerPush();
     }
 }
