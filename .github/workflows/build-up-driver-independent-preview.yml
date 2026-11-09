@@ -1,0 +1,74 @@
+name: Compilar APK do entregador - UP independente (previa)
+
+on:
+  push:
+    branches:
+      - preparar-apk-up-independente-20261108
+    paths:
+      - 'app/**'
+      - '.github/workflows/build-up-driver-independent-preview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Baixar fontes da branch isolada
+        uses: actions/checkout@v4
+
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ''
+
+      - name: Instalar SDK 35
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Compilar somente APK debug do Supabase UP
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle :app:assembleDebug --stacktrace \
+            -PupDriverApiUrl=https://gkwmqwtktedarodvqqtn.supabase.co/functions/v1/driver-api-independent \
+            -PupRegistrationApiUrl=https://gkwmqwtktedarodvqqtn.supabase.co/functions/v1/driver-registration-independent \
+            -PupPublishableKey=sb_publishable_-G8dzZ51cG9ZTdVviPAQdQ_9oSnwCyG
+
+      - name: Garantir que o APK nao aponta para o banco da loja
+        shell: bash
+        run: |
+          set -euo pipefail
+          file=app/build/generated/source/buildConfig/debug/com/rodriguesacai/entregador/BuildConfig.java
+          test -s "$file"
+          grep -Fq 'gkwmqwtktedarodvqqtn.supabase.co/functions/v1/driver-api-independent' "$file"
+          grep -Fq 'gkwmqwtktedarodvqqtn.supabase.co/functions/v1/driver-registration-independent' "$file"
+          grep -Fq 'sb_publishable_-G8dzZ51cG9ZTdVviPAQdQ_9oSnwCyG' "$file"
+          if grep -Fq 'fdqqwdplprzpqufpgdrm.supabase.co' "$file"; then
+            echo "ERRO: configuracao de build aponta para o Supabase da loja."
+            exit 1
+          fi
+          test -s app/build/outputs/apk/debug/app-debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk UP-Entregas-Independente-PREVIA.apk
+          sha256sum UP-Entregas-Independente-PREVIA.apk
+
+      - name: Guardar previa sem publicar release nem substituir producao
+        uses: actions/upload-artifact@v4
+        with:
+          name: UP-Entregas-Independente-PREVIA
+          path: UP-Entregas-Independente-PREVIA.apk
+          if-no-files-found: error
+          retention-days: 7
