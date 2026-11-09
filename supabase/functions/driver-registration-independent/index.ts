@@ -50,12 +50,12 @@ Deno.serve(async req=>{
    .select("id,state,documents").eq("firebase_uid",uid).maybeSingle();
   if(existing.error)throw existing.error;
   if(action==="status_sync"){
-   const courier=await db.from("up_couriers").select("state")
+   const courier=await db.from("up_couriers").select("state,online")
     .eq("firebase_uid",uid).maybeSingle();
    if(courier.error)throw courier.error;
    const status=courier.data?.state==="APPROVED"?"approved":
     stateToApp(existing.data?.state);
-   return json({ok:true,status});
+   return json({ok:true,status,online:courier.data?.online===true});
   }
   if(action==="submit"){
    const profile=obj(body.profile);

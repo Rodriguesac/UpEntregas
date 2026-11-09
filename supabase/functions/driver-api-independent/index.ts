@@ -92,6 +92,10 @@ Deno.serve(async(req:Request)=>{
   if(!courier||courier.state!=="APPROVED")return reply({ok:false,error:"driver_not_approved"},403);
   const missionId=parseId(body.mission_id||body.order_id);
   const now=new Date().toISOString();
+  // Read-only mobile session: never trusts courier identifiers supplied by the caller.
+  if(action==="session"){
+   return reply({ok:true,online:courier.online===true,state:courier.state});
+  }
   if(action==="presence"){
    const upd=await admin.from("up_couriers").update({online:body.online===true,updated_at:now})
     .eq("id",courier.id);if(upd.error)throw upd.error;
