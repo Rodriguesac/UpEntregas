@@ -1,0 +1,147 @@
+name: Compilar UP Entregador Next (independente)
+# Rebuild da branch com a logo original amarela UP Entregas (09-11-2026)
+
+on:
+  push:
+    branches: [main, up-entregador-nativo-independente-20261109]
+    paths:
+      - '.github/workflows/build-up-driver-next.yml'
+      - 'up-driver-next/**'
+      - 'supabase/functions/driver-api-independent/**'
+      - 'supabase/functions/driver-registration-independent/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Baixar aplicativo independente sem tocar no legado
+        uses: actions/checkout@v4
+        with:
+          ref: up-entregador-nativo-independente-20261109
+      - name: Preparar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Preparar SDK Android
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ''
+      - name: Instalar API 35
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Restaurar assinatura estavel da previa independente
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: up-driver-next-debug-keystore-v1
+      - name: Garantir chave exclusiva de atualizacao da previa
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.android
+          if [ ! -f ~/.android/debug.keystore ]; then
+            keytool -genkeypair -v \
+              -keystore ~/.android/debug.keystore \
+              -storepass android -alias androiddebugkey \
+              -keypass android -keyalg RSA -keysize 3072 \
+              -validity 10000 \
+              -dname "CN=UP Entregador Next, OU=UP Entregas, O=Rodrigues, L=Campo Grande, ST=MS, C=BR"
+          fi
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Preparar Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validar isolamento, autorizacao e cadastro independente
+        run: |
+          node scripts/test-up-independent-driver.mjs
+          node scripts/test-up-independent-registration.mjs
+      - name: Preparar Deno 2
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Verificar tipos das APIs independentes
+        run: |
+          deno check supabase/functions/driver-api-independent/index.ts
+          deno check supabase/functions/driver-registration-independent/index.ts
+      - name: Ler configuracao Android do Firebase com verificacao de pacote
+        shell: bash
+        env:
+          UP_FIREBASE_ANDROID_CONFIG_B64: ${{ secrets.UP_DRIVER_FIREBASE_GOOGLE_SERVICES_B64 }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, base64, json, re, sys
+          encoded=os.environ.get("UP_FIREBASE_ANDROID_CONFIG_B64","").strip()
+          if not encoded:
+              print("Firebase Android ainda não registrado: compilando preview com FCM bloqueado.")
+              sys.exit(0)
+          try:
+              raw=base64.b64decode(encoded,validate=True)
+              if len(raw)>100000: raise ValueError("arquivo muito grande")
+              data=json.loads(raw)
+              project=data.get("project_info",{})
+              if project.get("project_id")!="rodrigues-d6566" or str(project.get("project_number"))!="1010835711502":
+                  raise ValueError("Projeto Firebase incorreto")
+              expected="com.rodriguesacai.updriver.independente"
+              found=[c for c in data.get("client",[]) if
+                c.get("client_info",{}).get("android_client_info",{}).get("package_name")==expected]
+              if len(found)!=1:raise ValueError("Pacote Android independente não encontrado")
+              entry=found[0]
+              app_id=entry["client_info"]["mobilesdk_app_id"]
+              if not re.fullmatch(r"1:1010835711502:android:[0-9a-fA-F]{16,}",app_id):
+                  raise ValueError("Firebase App ID inválido")
+              if app_id=="1:1010835711502:android:979e8dadff59ad17d6be5f":
+                  raise ValueError("Não reutilizar o app Firebase do aplicativo antigo")
+              api_key=next((k.get("current_key","") for k in entry.get("api_key",[]) if k.get("current_key")), "")
+              if not re.fullmatch(r"AIza[A-Za-z0-9_-]{30,}",api_key):
+                  raise ValueError("API key do arquivo Firebase inválida")
+              with open(os.environ["GITHUB_ENV"],"a") as f:
+                  f.write("UP_FIREBASE_ANDROID_APP_ID="+app_id+"\n")
+                  f.write("UP_FIREBASE_ANDROID_API_KEY="+api_key+"\n")
+              print("Firebase Android independente: configuração pública validada por pacote e projeto.")
+          except Exception as err:
+              print("Configuração Firebase recusada: "+str(err))
+              sys.exit(1)
+          PY
+      - name: Compilar SOMENTE app novo e independente
+        shell: bash
+        run: |
+          gradle :up-driver-next:assembleDebug --stacktrace \
+            -PupFirebaseAppId="${UP_FIREBASE_ANDROID_APP_ID:-}" \
+            -PupFirebaseApiKey="${UP_FIREBASE_ANDROID_API_KEY:-}"
+      - name: Analisar erros Android lint
+        run: gradle :up-driver-next:lintDebug --stacktrace
+      - name: Verificar identidade e destino do APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s up-driver-next/build/outputs/apk/debug/up-driver-next-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging up-driver-next/build/outputs/apk/debug/up-driver-next-debug.apk | grep -Fq "package: name='com.rodriguesacai.updriver.independente' versionCode='101'"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging up-driver-next/build/outputs/apk/debug/up-driver-next-debug.apk | grep -Fq "versionName='1.0.1-beta'"
+
+          file=up-driver-next/build/generated/source/buildConfig/debug/com/rodriguesacai/updriver/BuildConfig.java
+          test -s "$file"
+          grep -Fq 'gkwmqwtktedarodvqqtn.supabase.co/functions/v1/driver-api-independent' "$file"
+          grep -Fq 'gkwmqwtktedarodvqqtn.supabase.co/functions/v1/driver-registration-independent' "$file"
+          if grep -Fq 'fdqqwdplprzpqufpgdrm' "$file"; then
+            echo "Falha: app novo aponta para o Supabase da loja"
+            exit 1
+          fi
+          cp up-driver-next/build/outputs/apk/debug/up-driver-next-debug.apk UP-Entregador-Novo-Previa.apk
+          sha256sum UP-Entregador-Novo-Previa.apk
+      - name: Disponibilizar APK de previa, sem publicar em producao
+        uses: actions/upload-artifact@v4
+        with:
+          name: UP-Entregador-Novo-Previa
+          path: UP-Entregador-Novo-Previa.apk
+          retention-days: 7
+          if-no-files-found: error
