@@ -32,15 +32,15 @@ public final class PushService extends FirebaseMessagingService {
         super.onMessageReceived(message);
         if (!BuildConfig.UP_FIREBASE_ANDROID_REGISTERED) return;
         if(FirebaseAuth.getInstance().getCurrentUser()==null)return;
+        // The independent FCM worker sends DATA-ONLY messages. Never display
+        // notifications from Rodrigues' legacy Firebase event collections.
+        java.util.Map<String,String> data = message.getData();
+        if(!OfferPushPolicy.isIndependentOffer(data))return;
         if(Build.VERSION.SDK_INT>=33
           && ContextCompat.checkSelfPermission(this,Manifest.permission.POST_NOTIFICATIONS)
               !=PackageManager.PERMISSION_GRANTED) return;
-        String title = message.getNotification()==null?"Nova informação do UP"
-            :message.getNotification().getTitle();
-        String body = message.getNotification()==null?"Abra o UP para consultar suas corridas."
-            :message.getNotification().getBody();
-        if(title==null||title.trim().isEmpty()) title="UP Entregas";
-        if(body==null||body.trim().isEmpty())body="Consulte o aplicativo para verificar a próxima ação.";
+        String title = OfferPushPolicy.title(data.get("title"));
+        String body = OfferPushPolicy.body(data.get("body"));
         Intent launch=new Intent(this,MainActivity.class);
         launch.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP);
         PendingIntent pending=PendingIntent.getActivity(this,45,launch,
@@ -50,11 +50,12 @@ public final class PushService extends FirebaseMessagingService {
             .setContentTitle(title.length()>80?title.substring(0,80):title)
             .setContentText(body.length()>180?body.substring(0,180):body)
             .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
             .setContentIntent(pending)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
             .build();
         NotificationManager mgr=getSystemService(NotificationManager.class);
-        if(mgr!=null)mgr.notify((int)(System.currentTimeMillis()%30000)+100,notif);
+        if(mgr!=null)mgr.notify(OfferPushPolicy.notificationId(data.get("offerId")),notif);
     }
 }

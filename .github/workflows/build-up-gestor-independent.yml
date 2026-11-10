@@ -3,7 +3,7 @@ name: Empacotar UP Gestor Independente Android
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, exec/operational-reliability-20261110]
     paths:
       - 'gestor-independente/**'
       - 'web-gestor-independente/**'

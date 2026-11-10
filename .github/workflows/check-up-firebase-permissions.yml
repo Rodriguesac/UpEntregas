@@ -1,0 +1,28 @@
+name: Verificar se Firebase está pronto para UP
+on:
+  push:
+    branches: [exec/operational-reliability-20261110]
+    paths: ['.github/workflows/check-up-firebase-permissions.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verificar presença das credenciais sem mostrar segredos
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.UP_FIREBASE_SERVICE_ACCOUNT_JSON }}
+          UP_DRIVER_ANDROID_CONFIG: ${{ secrets.UP_DRIVER_FIREBASE_GOOGLE_SERVICES_B64 }}
+        shell: bash
+        run: |
+          if [ -n "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "FIREBASE_SERVICE_ACCOUNT_CONFIGURED=yes"
+          else
+            echo "FIREBASE_SERVICE_ACCOUNT_CONFIGURED=no"
+          fi
+          if [ -n "$UP_DRIVER_ANDROID_CONFIG" ]; then
+            echo "UP_DRIVER_ANDROID_CONFIG_CONFIGURED=yes"
+          else
+            echo "UP_DRIVER_ANDROID_CONFIG_CONFIGURED=no"
+          fi

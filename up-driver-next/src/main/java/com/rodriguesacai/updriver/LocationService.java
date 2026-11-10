@@ -32,7 +32,8 @@ public final class LocationService extends Service {
     private LocationCallback callback;
     private String mission = "";
     private boolean requesting, inFlight;
-    private long lastAt;
+    private long lastAt, lastSuccess;
+    private int generation;
     private Location lastSent;
 
     @Override public void onCreate() {
@@ -50,7 +51,7 @@ public final class LocationService extends Service {
         if(!mission.equals(incoming)) {
             stopUpdates();
             mission=incoming;
-            lastAt=0;
+            lastAt=0;lastSuccess=0;generation++;inFlight=false;
             lastSent=null;
         }
         try {
@@ -88,8 +89,7 @@ public final class LocationService extends Service {
         if(requesting || !permitted()) return;
         LocationRequest request = new LocationRequest.Builder(Priority.PRIORITY_BALANCED_POWER_ACCURACY,20000L)
             .setMinUpdateIntervalMillis(10000L)
-            .setMinUpdateDistanceMeters(30f)
-            .build();
+                        .build();
         callback = new LocationCallback() {
             @Override public void onLocationResult(LocationResult result) {
                 if(result==null) return;
@@ -109,18 +109,24 @@ public final class LocationService extends Service {
         if(!Double.isFinite(loc.getLatitude())||!Double.isFinite(loc.getLongitude()))return;
         if(Math.abs(loc.getLatitude())<0.00001 && Math.abs(loc.getLongitude())<0.00001)return;
         long now=SystemClock.elapsedRealtime();
-        if(now-lastAt<12000) return;
-        if(lastSent!=null && lastSent.distanceTo(loc)<30 && now-lastAt<60000)return;
+        long age=(SystemClock.elapsedRealtimeNanos()-loc.getElapsedRealtimeNanos())/1000000L;
+        if(!GpsPolicy.shouldSend(now-lastAt,now-lastSuccess,
+            lastSent==null?0:lastSent.distanceTo(loc),age,loc.getAccuracy(),lastSent!=null))return;
+        final int sentGeneration=generation;
+        lastAt=now;
         inFlight=true;
         backend.driver("location",Backend.args(
             "mission_id",mission,"lat",loc.getLatitude(),"lng",loc.getLongitude(),
             "accuracy",loc.getAccuracy()),new Backend.Callback(){
                 @Override public void onSuccess(JSONObject response) {
-                    inFlight=false;lastAt=SystemClock.elapsedRealtime();lastSent=new Location(loc);
+                    if(sentGeneration!=generation)return;
+                    inFlight=false;lastSuccess=SystemClock.elapsedRealtime();lastSent=new Location(loc);
                 }
                 @Override public void onError(String message) {
-                    inFlight=false; lastAt=SystemClock.elapsedRealtime();
-                    if(message.contains("somente em uma corrida ativa") || message.contains("vinculada"))stopSelf();
+                    if(sentGeneration!=generation)return;
+                    inFlight=false;
+                    if(message.contains("somente em uma corrida ativa") || message.contains("vinculada")
+                       ||message.contains("aprovar seu cadastro")||message.contains("Sessão"))stopSelf();
                 }
             });
     }
@@ -129,6 +135,6 @@ public final class LocationService extends Service {
         if(fused!=null && callback!=null)fused.removeLocationUpdates(callback);
         requesting=false;callback=null;
     }
-    @Override public void onDestroy(){stopUpdates();super.onDestroy();}
+    @Override public void onDestroy(){generation++;stopUpdates();super.onDestroy();}
     @Nullable @Override public IBinder onBind(Intent i){return null;}
 }
