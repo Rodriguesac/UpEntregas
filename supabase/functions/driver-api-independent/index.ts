@@ -29,6 +29,7 @@ function addressText(address:any){
 function document(job:any,offered:boolean){
  const origin=obj(job.pickup),dest=obj(job.dropoff);
  const state=offered?"OFFER_PENDING":txt(job.status);
+ const merchantName=txt(obj(job.up_merchants).display_name)||txt(origin.name)||txt(origin.business_name)||"Estabelecimento";
  const data={
   source:"supabase",missionType:"SUPABASE_ORDER",
   pedidoId:job.merchant_order_id,orderId:job.id,
@@ -38,7 +39,7 @@ function document(job:any,offered:boolean){
   clienteEnderecoCompleto:addressText(dest),deliveryAddress:addressText(dest),
   destinoEndereco:addressText(dest),enderecoCliente:addressText(dest),
   enderecoLoja:addressText(origin),coletaEndereco:addressText(origin),
-  coletaNome:"Rodrigues Açaí e Cia",lojaNome:"Rodrigues Açaí e Cia",
+  coletaNome:merchantName,lojaNome:merchantName,
   clienteLat:loc(obj(dest.location),"lat"),clienteLng:loc(obj(dest.location),"lng"),
   destinoLat:loc(obj(dest.location),"lat"),destinoLng:loc(obj(dest.location),"lng"),
   lojaLat:loc(obj(origin.location),"lat"),lojaLng:loc(obj(origin.location),"lng"),
@@ -96,6 +97,16 @@ Deno.serve(async(req:Request)=>{
   if(action==="session"){
    return reply({ok:true,online:courier.online===true,state:courier.state});
   }
+  if(action==="equipment_status"){
+   const eq=obj(obj(courier.metadata).equipment);
+   const cash=Number(eq.cash_available);
+   return reply({ok:true,equipment:{
+    has_cash:eq.has_cash===true,
+    cash_available:Number.isFinite(cash)?Math.max(0,cash):0,
+    has_machine:eq.has_machine===true,
+    machine_types:txt(eq.machine_types).slice(0,80)
+   }});
+  }
   if(action==="presence"){
    const upd=await admin.from("up_couriers").update({online:body.online===true,updated_at:now})
     .eq("id",courier.id);if(upd.error)throw upd.error;
@@ -124,7 +135,7 @@ Deno.serve(async(req:Request)=>{
    return reply({ok:true});
   }
   if(action==="offer"){
-   const current=await admin.from("up_jobs").select("*").eq("assigned_courier_id",courier.id)
+   const current=await admin.from("up_jobs").select("*,up_merchants!up_jobs_merchant_id_fkey(display_name)").eq("assigned_courier_id",courier.id)
     .not("status","in",'("DELIVERED","CANCELLED","FAILED")')
     .order("updated_at",{ascending:false}).limit(1);
    if(current.error)throw current.error;
@@ -135,14 +146,14 @@ Deno.serve(async(req:Request)=>{
    if(offers.error)throw offers.error;
    if(!offers.data?.length)return reply({ok:true,document:null});
    const ids=offers.data.map((x:any)=>x.job_id);
-   const jobs=await admin.from("up_jobs").select("*").in("id",ids)
+   const jobs=await admin.from("up_jobs").select("*,up_merchants!up_jobs_merchant_id_fkey(display_name)").in("id",ids)
     .eq("status","OFFERED").is("assigned_courier_id",null);
    if(jobs.error)throw jobs.error;
    const job=offers.data.map((o:any)=>jobs.data?.find((j:any)=>j.id===o.job_id)).find(Boolean);
    return reply({ok:true,document:job?document(job,true):null});
   }
   if(action==="history"){
-   const hist=await admin.from("up_jobs").select("*").eq("assigned_courier_id",courier.id)
+   const hist=await admin.from("up_jobs").select("*,up_merchants!up_jobs_merchant_id_fkey(display_name)").eq("assigned_courier_id",courier.id)
     .order("updated_at",{ascending:false}).limit(40);
    if(hist.error)throw hist.error;
    return reply({ok:true,documents:(hist.data||[]).map((x:any)=>document(x,false))});
@@ -164,7 +175,7 @@ Deno.serve(async(req:Request)=>{
   }
   if(!uuid.test(missionId))return reply({ok:false,error:"mission_required"},400);
   const getJob=async()=>{
-   const r=await admin.from("up_jobs").select("*").eq("id",missionId).maybeSingle();
+   const r=await admin.from("up_jobs").select("*,up_merchants!up_jobs_merchant_id_fkey(display_name)").eq("id",missionId).maybeSingle();
    if(r.error)throw r.error;return r.data;
   };
   const ownJob=async()=>{
@@ -187,6 +198,13 @@ Deno.serve(async(req:Request)=>{
    return reply({ok:true,document:document(job,true)});
   }
   if(action==="accept"){
+   // Somente novas corridas; nunca suspender uma entrega em andamento.
+   const tele=obj(obj(courier.metadata).telemetry);
+   const level=tele.battery_level;
+   const at=Date.parse(txt(tele.at));
+   if(typeof level==="number"&&Number.isInteger(level)&&level>=0&&level<15
+       &&Number.isFinite(at)&&at<=Date.now()+60000&&Date.now()-at<=300000)
+    return reply({ok:false,error:"battery_below_minimum",minimum_battery_percent:15},409);
    const offer=await admin.from("up_dispatch_offers").select("id")
     .eq("job_id",missionId).eq("courier_id",courier.id)
     .eq("status","PENDING").gt("expires_at",now).limit(1);
