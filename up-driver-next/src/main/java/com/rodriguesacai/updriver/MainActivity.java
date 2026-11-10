@@ -2,6 +2,8 @@ package com.rodriguesacai.updriver;
 
 import android.Manifest;
 import android.content.Intent;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
@@ -28,6 +30,7 @@ import com.google.android.material.switchmaterial.SwitchMaterial;
 import androidx.activity.ComponentActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.core.app.NotificationCompat;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.textfield.TextInputEditText;
 import com.google.android.material.textfield.TextInputLayout;
@@ -386,7 +389,7 @@ public final class MainActivity extends ComponentActivity {
         backend.driver("presence",Backend.args("online",newValue),new Backend.Callback(){
             @Override public void onSuccess(JSONObject data){
                 inFlight=false;online=newValue;
-                if(online){registerPush();beginPolling();refreshOffer(false);}
+                if(online){requestNotifications();beginPolling();refreshOffer(false);}
                 else {handler.removeCallbacks(poll);}
                 inform(online?"Você está disponível para receber ofertas.":"Você está offline para novas ofertas.");
             }
@@ -422,6 +425,7 @@ public final class MainActivity extends ComponentActivity {
         mission=data;
         missionId=doc.optString("id","").replace("supabase:","");
         String state=data.optString("upState","");
+        if(data.optBoolean("ofertaAtiva",false)) notifyFoundOffer(missionId);
         if(!data.optBoolean("ofertaAtiva") && activeState(state)) startLocationIfAllowed();
         else stopLocation();
     }
@@ -617,7 +621,10 @@ public final class MainActivity extends ComponentActivity {
         text(c,"Cadastro: aprovado pelo UP Gestor",13,GREEN,false);
         if (BuildConfig.UP_FIREBASE_ANDROID_REGISTERED)
             button(c,"Reativar notificações de ofertas",BLUE,false,this::requestNotifications);
-        else text(c,"FCM ainda não homologado para este pacote Android. A versão de prévia não promete notificações push.",13,MUTED,false);
+        else {
+            button(c,"Ativar alertas de ofertas",BLUE,false,this::requestNotifications);
+            text(c,"Ofertas verificadas automaticamente enquanto o aplicativo está aberto. Para notificações imediatas em segundo plano, o Firebase precisa ser registrado.",13,MUTED,false);
+        }
         text(c,"Para alterar dados de um cadastro aprovado, solicite revisão ao UP Gestor.",13,MUTED,false);
         button(c,"Configurar troco e maquininha",Color.rgb(231,240,255),true,()->{screen="operation";notice="";render();});
         button(c,"Sair com segurança",Color.rgb(245,231,231),true,this::signOut);
@@ -780,6 +787,31 @@ public final class MainActivity extends ComponentActivity {
         }
     }
 
+    /** Local alert for newly discovered offers; acceptance stays server-authorized. */
+    private void notifyFoundOffer(String id) {
+        if(id==null||!id.matches("(?i)[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}"))return;
+        if(Build.VERSION.SDK_INT>=33 &&
+          ContextCompat.checkSelfPermission(this,Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)return;
+        android.content.SharedPreferences prefs=getSharedPreferences("up_offer_notifications",MODE_PRIVATE);
+        if(id.equals(prefs.getString("last_id","")))return;
+        Intent open=new Intent(this,MainActivity.class);
+        open.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent pending=PendingIntent.getActivity(this,71,open,
+            PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
+        NotificationCompat.Builder builder=new NotificationCompat.Builder(this,UpDriverApp.CHANNEL_OFFERS)
+            .setSmallIcon(android.R.drawable.ic_dialog_map)
+            .setContentTitle("Nova corrida UP")
+            .setContentText("Uma entrega está disponível. Abra o aplicativo para aceitar.")
+            .setContentIntent(pending).setAutoCancel(true)
+            .setOnlyAlertOnce(true).setDefaults(NotificationCompat.DEFAULT_ALL)
+            .setPriority(NotificationCompat.PRIORITY_HIGH);
+        NotificationManager manager=getSystemService(NotificationManager.class);
+        if(manager!=null){
+            manager.notify(OfferPushPolicy.notificationId(id),builder.build());
+            prefs.edit().putString("last_id",id).apply();
+        }
+    }
+
     private void registerPush() {
         // A separate Android Firebase app registration is mandatory for reliable FCM.
         if (!BuildConfig.UP_FIREBASE_ANDROID_REGISTERED) return;
@@ -797,9 +829,6 @@ public final class MainActivity extends ComponentActivity {
         });
     }
     private void requestNotifications() {
-        if (!BuildConfig.UP_FIREBASE_ANDROID_REGISTERED) {
-            inform("O Android deste novo UP ainda precisa ser registrado no Firebase.");return;
-        }
         if(Build.VERSION.SDK_INT>=33 &&
           ContextCompat.checkSelfPermission(this,Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this,new String[]{Manifest.permission.POST_NOTIFICATIONS},NOTIFICATION_PERMISSION);

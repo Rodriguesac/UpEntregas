@@ -126,8 +126,8 @@ jobs:
         run: |
           set -euo pipefail
           test -s up-driver-next/build/outputs/apk/debug/up-driver-next-debug.apk
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging up-driver-next/build/outputs/apk/debug/up-driver-next-debug.apk | grep -Fq "package: name='com.rodriguesacai.updriver.independente' versionCode='103'"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging up-driver-next/build/outputs/apk/debug/up-driver-next-debug.apk | grep -Fq "versionName='1.0.3-beta'"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging up-driver-next/build/outputs/apk/debug/up-driver-next-debug.apk | grep -Fq "package: name='com.rodriguesacai.updriver.independente' versionCode='104'"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging up-driver-next/build/outputs/apk/debug/up-driver-next-debug.apk | grep -Fq "versionName='1.0.4-beta'"
 
           file=up-driver-next/build/generated/source/buildConfig/debug/com/rodriguesacai/updriver/BuildConfig.java
           test -s "$file"

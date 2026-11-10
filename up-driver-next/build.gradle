@@ -10,8 +10,8 @@ android {
         applicationId 'com.rodriguesacai.updriver.independente'
         minSdk 26
         targetSdk 35
-        versionCode 103
-        versionName '1.0.3-beta'
+        versionCode 104
+        versionName '1.0.4-beta'
         buildConfigField 'String', 'UP_DRIVER_ENDPOINT', '"https://gkwmqwtktedarodvqqtn.supabase.co/functions/v1/driver-api-independent"'
         buildConfigField 'String', 'UP_REGISTRATION_ENDPOINT', '"https://gkwmqwtktedarodvqqtn.supabase.co/functions/v1/driver-registration-independent"'
         buildConfigField 'String', 'UP_PUBLISHABLE_KEY', '"sb_publishable_-G8dzZ51cG9ZTdVviPAQdQ_9oSnwCyG"'
