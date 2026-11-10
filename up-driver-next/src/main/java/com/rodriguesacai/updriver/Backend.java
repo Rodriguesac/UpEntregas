@@ -122,6 +122,7 @@ public final class Backend {
             case "offer_not_found": case "offer_expired_or_used": return "Esta oferta expirou ou já foi utilizada.";
             case "job_unavailable": return "A corrida já não está disponível.";
             case "invalid_driver_transition": return "Esta etapa não pode ser confirmada agora. Atualize a corrida.";
+            case "battery_below_minimum": return "Bateria abaixo de 15%. Recarregue antes de aceitar novas corridas.";
             case "incorrect_confirmation_code": return "Código de confirmação incorreto.";
             case "collection_not_confirmed": return "Informe o valor recebido antes de concluir.";
             case "mission_not_authorized": return "A corrida não está vinculada à sua conta.";
