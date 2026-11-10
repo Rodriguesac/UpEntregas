@@ -1,0 +1,91 @@
+name: Publicar aplicativos UP Android (beta)
+on:
+  push:
+    branches: [exec/operational-reliability-20261110]
+    paths: ['.github/workflows/publish-up-android-beta.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: ''
+      - name: SDK 35
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: up-driver-next-debug-keystore-v1
+      - name: Assinatura estável da prévia
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.android
+          if [ ! -f ~/.android/debug.keystore ]; then
+            keytool -genkeypair -v -keystore ~/.android/debug.keystore -storepass android \
+              -alias androiddebugkey -keypass android -keyalg RSA -keysize 3072 \
+              -validity 10000 -dname "CN=UP Entregas Preview,OU=UP,O=Rodrigues,L=Campo Grande,ST=MS,C=BR"
+          fi
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Compilar motorista e gestor sem tocar no app da loja
+        run: gradle :up-driver-next:assembleDebug :gestor-independente:assembleDebug --stacktrace
+      - name: Validar APKs e pacote independente
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          driver="up-driver-next/build/outputs/apk/debug/up-driver-next-debug.apk"
+          manager="gestor-independente/build/outputs/apk/debug/gestor-independente-debug.apk"
+          test -s "$driver"
+          test -s "$manager"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$driver" | grep -Fq "package: name='com.rodriguesacai.updriver.independente' versionCode='104'"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$manager" | grep -Fq "package: name='com.rodriguesacai.upgestor.independente' versionCode='101'"
+          cp "$driver" dist/UP-Entregador-1.0.4-Beta.apk
+          cp "$manager" dist/UP-Gestor-1.0.1-Beta.apk
+          sha256sum dist/*.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: UP-Entregas-Android-Beta
+          path: dist/*.apk
+          retention-days: 14
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: UP-Entregas-Android-Beta
+          path: dist
+      - name: Publicar link direto para instalação no Android
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="up-entregas-android-v2026.11.10-beta"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/*.apk --clobber
+          else
+            gh release create "$tag" dist/*.apk \
+              --target "${GITHUB_SHA}" \
+              --title "UP Entregas Android - beta 10/11/2026" \
+              --notes "Entregador 1.0.4-beta e Gestor 1.0.1-beta no Supabase exclusivo UP. Login obrigatório; cadastro e ofertas exigem permissão. Atualização de ofertas no app aberto; notificações push com o app em segundo plano dependem do cadastro Firebase exclusivo. APKs de homologação assinados como debug, não publicados na Play Store." \
+              --prerelease
+          fi
+          gh release view "$tag" --json url --jq .url
