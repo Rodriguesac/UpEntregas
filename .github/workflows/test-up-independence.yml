@@ -106,6 +106,7 @@ jobs:
           bash scripts/verify-up-driver-postgres.sh
           bash scripts/verify-up-manager-postgres.sh
           bash scripts/verify-up-e2e.sh
+          bash scripts/verify-up-concurrency.sh
       - name: Empacotar novo painel do UP (sem publicar)
         uses: actions/upload-artifact@v4
         with:
