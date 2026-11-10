@@ -11,6 +11,8 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.BatteryManager;
+import android.content.IntentFilter;
 import android.os.Looper;
 import android.text.InputType;
 import android.view.Gravity;
@@ -21,6 +23,7 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import com.google.android.material.switchmaterial.SwitchMaterial;
 
 import androidx.activity.ComponentActivity;
 import androidx.core.app.ActivityCompat;
@@ -58,6 +61,9 @@ public final class MainActivity extends ComponentActivity {
     private String missionId = "";
     private JSONArray history = new JSONArray();
     private JSONArray walletEntries = new JSONArray(), payouts = new JSONArray();
+    private boolean hasCash, hasMachine;
+    private double cashAvailable;
+    private String machineTypes="";
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -85,7 +91,7 @@ public final class MainActivity extends ComponentActivity {
     }
 
     @Override public void onBackPressed() {
-        if ("mission".equals(screen) || "history".equals(screen) || "profile".equals(screen) || "wallet".equals(screen)) {
+        if ("mission".equals(screen) || "history".equals(screen) || "profile".equals(screen) || "wallet".equals(screen) || "operation".equals(screen)) {
             screen = "home"; render(); return;
         }
         super.onBackPressed();
@@ -119,6 +125,7 @@ public final class MainActivity extends ComponentActivity {
         else if ("history".equals(screen)) history();
         else if ("wallet".equals(screen)) wallet();
         else if ("profile".equals(screen)) profile();
+        else if ("operation".equals(screen)) operation();
         else if ("mission".equals(screen)) mission();
         else home();
         if (approved && !("login".equals(screen) || "signup".equals(screen)
@@ -275,7 +282,7 @@ public final class MainActivity extends ComponentActivity {
                     @Override public void onSuccess(JSONObject response) {
                         online=response.optBoolean("online",false);
                         approved=true;screen="home";notice="";
-                        registerPush();render();refreshOffer(false);beginPolling();
+                        loadEquipment();registerPush();render();refreshOffer(false);beginPolling();
                     }
                     @Override public void onError(String other) {
                         approved=false;screen="pending";
@@ -292,7 +299,7 @@ public final class MainActivity extends ComponentActivity {
     private void accountState(String status) {
         if("approved".equals(status)){
             approved=true;screen="home";verification="Aprovado";notice="";
-            registerPush();render();refreshOffer(false);beginPolling();return;
+            loadEquipment();registerPush();render();refreshOffer(false);beginPolling();return;
         }
         approved=false;screen="pending";
         verification="pending".equals(status)?"Sua inscrição aguarda análise do gestor."
@@ -347,6 +354,8 @@ public final class MainActivity extends ComponentActivity {
         text(status,"SEU STATUS AGORA",12,Color.rgb(190,208,233),true);gap(status,8);
         text(status,online?"Disponível para corridas":"Você está offline",24,WHITE,true);gap(status,5);
         text(status,online?"O UP pode lhe oferecer uma corrida direcionada.":"Fique online quando estiver pronto para trabalhar.",13,Color.rgb(213,224,241),false);
+        int level=batteryPercent();
+        if(level>=0)text(status,"Bateria: "+level+"%",13,level<15?AMBER:WHITE,true);
         button(status,online?"Ficar offline":"Ficar online",online?Color.rgb(60,84,119):GREEN,false,this::toggleAvailability);
 
         LinearLayout missionCard=card();
@@ -372,6 +381,7 @@ public final class MainActivity extends ComponentActivity {
     private void toggleAvailability() {
         if(inFlight)return;
         boolean newValue=!online;
+        if(newValue&&!batteryAllowsNewWork())return;
         inFlight=true;render();
         backend.driver("presence",Backend.args("online",newValue),new Backend.Callback(){
             @Override public void onSuccess(JSONObject data){
@@ -432,11 +442,11 @@ public final class MainActivity extends ComponentActivity {
         text(top,"Cada mudança é confirmada pelo servidor do UP.",12,Color.rgb(204,220,241),false);
 
         LinearLayout pickup=card();
-        title(pickup,"Retirar na loja",mission.optString("coletaNome","Rodrigues Açaí e Cia"));
+        title(pickup,"Retirar na loja",mission.optString("coletaNome","Estabelecimento"));
         text(pickup,mission.optString("coletaEndereco","Endereço de retirada não informado."),14,INK,false);
         button(pickup,"Abrir rota até a loja",Color.rgb(231,240,255),true,()->navigate(
             mission.optDouble("lojaLat",0),mission.optDouble("lojaLng",0),
-            mission.optString("coletaEndereco","Rodrigues Açaí e Cia")));
+            mission.optString("coletaEndereco","")));
 
         LinearLayout dropoff=card();
         title(dropoff,"Entrega ao cliente",mission.optString("clienteNome","Cliente"));
@@ -457,12 +467,12 @@ public final class MainActivity extends ComponentActivity {
         } else if("TO_STORE".equals(state)) {
             button(next,"Cheguei à loja",BLUE,false,()->action("stage",Backend.args("status","COLETANDO")));
         } else if("AT_STORE".equals(state)) {
-            EditText pickupCode=input(next,"Código de retirada (se solicitado)",InputType.TYPE_CLASS_TEXT);
+            EditText pickupCode=input(next,"Código numérico de retirada (se solicitado)",InputType.TYPE_CLASS_NUMBER);
             button(next,"Confirmei a retirada",BLUE,false,()->action("pickup",Backend.args("code",pickupCode.getText().toString().trim())));
         } else if("TO_CUSTOMER".equals(state)) {
             button(next,"Cheguei ao endereço",BLUE,false,()->action("stage",Backend.args("status","NO_CLIENTE")));
         } else if("AT_CUSTOMER".equals(state)) {
-            EditText deliveredCode=input(next,"Código de entrega, se solicitado",InputType.TYPE_CLASS_TEXT);
+            EditText deliveredCode=input(next,"Código numérico de entrega, se solicitado",InputType.TYPE_CLASS_NUMBER);
             EditText cash=input(next,collect>0?"Valor recebido do cliente (R$)":"Valor recebido (R$ 0,00)",
                 InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
             if(collect<=0) cash.setText("0");
@@ -493,6 +503,7 @@ public final class MainActivity extends ComponentActivity {
 
     private void action(String name,JSONObject payload) {
         if(inFlight||missionId.isEmpty())return;
+        if("accept".equals(name)&&!batteryAllowsNewWork())return;
         inFlight=true; render();
         try{payload.put("mission_id",missionId);}catch(Exception ignored){}
         backend.driver(name,payload,new Backend.Callback(){
@@ -608,10 +619,94 @@ public final class MainActivity extends ComponentActivity {
             button(c,"Reativar notificações de ofertas",BLUE,false,this::requestNotifications);
         else text(c,"FCM ainda não homologado para este pacote Android. A versão de prévia não promete notificações push.",13,MUTED,false);
         text(c,"Para alterar dados de um cadastro aprovado, solicite revisão ao UP Gestor.",13,MUTED,false);
+        button(c,"Configurar troco e maquininha",Color.rgb(231,240,255),true,()->{screen="operation";notice="";render();});
         button(c,"Sair com segurança",Color.rgb(245,231,231),true,this::signOut);
         LinearLayout i=card();
         text(i,"Privacidade do GPS",17,INK,true);gap(i,6);
         text(i,"O rastreamento só inicia durante uma corrida aceita, com permissão do Android e notificação persistente. Fora da missão, o serviço é encerrado.",14,MUTED,false);
+    }
+
+
+    private void loadEquipment() {
+        backend.driver("equipment_status",Backend.args(),new Backend.Callback(){
+            @Override public void onSuccess(JSONObject data) {
+                JSONObject e=data.optJSONObject("equipment");
+                if(e==null)return;
+                hasCash=e.optBoolean("has_cash",false);
+                cashAvailable=Math.max(0,e.optDouble("cash_available",0));
+                hasMachine=e.optBoolean("has_machine",false);
+                machineTypes=e.optString("machine_types","");
+                if("operation".equals(screen))render();
+            }
+            @Override public void onError(String error) { }
+        });
+    }
+
+    private void operation() {
+        LinearLayout c=card();
+        title(c,"Troco e maquininha","Recursos disponiveis para entregas de qualquer loja do UP.");
+        int pct=batteryPercent();
+        text(c,pct<0?"Bateria nao informada":"Bateria atual: "+pct+"%",14,MUTED,true);
+        SwitchMaterial cashToggle=new SwitchMaterial(this);
+        cashToggle.setText("Tenho troco");
+        cashToggle.setChecked(hasCash);
+        c.addView(cashToggle);
+        EditText cash=input(c,"Troco disponivel (R$)",InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        cash.setText(String.format(Locale.US,"%.2f",cashAvailable));
+        cash.setEnabled(hasCash);
+        cashToggle.setOnCheckedChangeListener((v,checked)->cash.setEnabled(checked));
+        SwitchMaterial machineToggle=new SwitchMaterial(this);
+        machineToggle.setText("Tenho maquininha");
+        machineToggle.setChecked(hasMachine);
+        c.addView(machineToggle);
+        EditText machine=input(c,"Cartoes aceitos (credito, debito...)",InputType.TYPE_CLASS_TEXT);
+        machine.setText(machineTypes);
+        machine.setEnabled(hasMachine);
+        machineToggle.setOnCheckedChangeListener((v,checked)->machine.setEnabled(checked));
+        button(c,"Salvar no UP",BLUE,false,()->{
+            double value=0;
+            if(cashToggle.isChecked()){
+                try{value=Double.parseDouble(cash.getText().toString().trim().replace(",","."));}
+                catch(Exception ex){inform("Informe o valor do troco.");return;}
+                if(!Double.isFinite(value)||value<0){inform("Valor de troco invalido.");return;}
+            }
+            boolean hc=cashToggle.isChecked(),hm=machineToggle.isChecked();
+            double amount=value;
+            String types=hm?machine.getText().toString().trim():"";
+            inFlight=true;
+            backend.driver("equipment",Backend.args("has_cash",hc,"cash_available",amount,
+                    "has_machine",hm,"machine_types",types),new Backend.Callback(){
+                @Override public void onSuccess(JSONObject response){
+                    inFlight=false;hasCash=hc;cashAvailable=amount;
+                    hasMachine=hm;machineTypes=types;
+                    inform("Disponibilidade salva no UP.");
+                }
+                @Override public void onError(String message){inFlight=false;inform(message);}
+            });
+        });
+        button(c,"Voltar",Color.rgb(238,242,248),true,()->{screen="profile";notice="";render();});
+    }
+
+    private int batteryPercent() {
+        Intent state=registerReceiver(null,new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+        if(state==null)return -1;
+        int level=state.getIntExtra(BatteryManager.EXTRA_LEVEL,-1);
+        int scale=state.getIntExtra(BatteryManager.EXTRA_SCALE,-1);
+        return level<0||scale<=0?-1:Math.max(0,Math.min(100,Math.round(100f*level/scale)));
+    }
+    private boolean batteryAllowsNewWork() {
+        int pct=batteryPercent();
+        if(pct>=0&&pct<15){inform("Bateria em "+pct+"%. Recarregue ate 15% para receber novas corridas.");return false;}
+        if(pct>=0){
+            Intent state=registerReceiver(null,new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+            boolean charging=state!=null&&(state.getIntExtra(BatteryManager.EXTRA_STATUS,0)==BatteryManager.BATTERY_STATUS_CHARGING
+                || state.getIntExtra(BatteryManager.EXTRA_STATUS,0)==BatteryManager.BATTERY_STATUS_FULL);
+            backend.driver("telemetry",Backend.args("battery_level",pct,"charging",charging),new Backend.Callback(){
+                @Override public void onSuccess(JSONObject result){}
+                @Override public void onError(String message){}
+            });
+        }
+        return true;
     }
 
     private void signOut() {
