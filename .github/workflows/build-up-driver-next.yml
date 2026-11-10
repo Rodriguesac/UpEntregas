@@ -64,6 +64,7 @@ jobs:
           bash scripts/test-driver-policies.sh
           node scripts/test-up-independent-driver.mjs
           node scripts/test-up-independent-registration.mjs
+          node scripts/test-up-runtime-switches.mjs
       - name: Preparar Deno 2
         uses: denoland/setup-deno@v2
         with:

@@ -61,8 +61,11 @@ Deno.serve(async req=>{
   }
   // Read-only status remains available while enrollment is disabled.
   // Every mutating action below still requires the private activation flag.
-  if(Deno.env.get("UP_INDEPENDENT_REGISTRATION_ENABLED")!=="true")
-   return json({ok:false,error:"independent_registration_disabled"},503);
+  if(Deno.env.get("UP_INDEPENDENT_REGISTRATION_ENABLED")!=="true"){
+    const gate=await db.from("up_settings").select("value").eq("id","runtime_registration").maybeSingle();
+    if(gate.error)throw gate.error;
+    if(gate.data?.value?.enabled!==true)return json({ok:false,error:"independent_registration_disabled"},503);
+   }
   if(action==="submit"){
    const profile=obj(body.profile);
    const fullName=txt(profile.nomeCompleto||profile.nome).slice(0,150);

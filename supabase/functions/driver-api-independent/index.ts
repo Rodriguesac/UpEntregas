@@ -65,8 +65,7 @@ const parseId=(v:unknown)=>txt(v).replace(/^supabase:/i,"");
 Deno.serve(async(req:Request)=>{
  if(req.method!=="POST")return reply({ok:false,error:"method_not_allowed"},405);
  if(req.headers.has("origin"))return reply({ok:false,error:"native_app_only"},403);
- if(Deno.env.get("UP_INDEPENDENT_DRIVER_ENABLED")!=="true")
-  return reply({ok:false,error:"independent_driver_disabled"},503);
+ 
  const url=Deno.env.get("SUPABASE_URL"),key=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
  if(!url||!key)return reply({ok:false,error:"service_not_configured"},503);
  const bearer=txt(req.headers.get("authorization")).replace(/^Bearer\s+/i,"");
@@ -87,6 +86,11 @@ Deno.serve(async(req:Request)=>{
  const action=txt(body.action).toLowerCase();
  const admin=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});
  try{
+  if(Deno.env.get("UP_INDEPENDENT_DRIVER_ENABLED")!=="true"){
+   const gate=await admin.from("up_settings").select("value").eq("id","runtime_driver").maybeSingle();
+   if(gate.error)throw gate.error;
+   if(gate.data?.value?.enabled!==true)return reply({ok:false,error:"independent_driver_disabled"},503);
+  }
   // Use only the UID in the cryptographically verified Firebase JWT.
   // Never accept courier IDs, roles or owner fields supplied by the client.
   const lookup=await admin.from("up_couriers").select("*").eq("firebase_uid",uid).maybeSingle();
@@ -270,3 +274,4 @@ Deno.serve(async(req:Request)=>{
   return reply({ok:false,error:"driver_api_failed"},500);
  }
 });
+
