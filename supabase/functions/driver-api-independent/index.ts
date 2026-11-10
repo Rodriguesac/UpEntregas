@@ -9,7 +9,7 @@ const jwks=createRemoteJWKSet(new URL("https://www.googleapis.com/service_accoun
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const txt=(x:unknown)=>String(x??"").trim();
 const obj=(x:any):Record<string,any>=>x&&typeof x==="object"&&!Array.isArray(x)?x:{};
-const num=(x:unknown)=>{const n=Number(x);return Number.isFinite(n)?n:NaN};
+const num=(x:unknown)=>{if(x===null||x===undefined||typeof x==="boolean"||txt(x)==="")return NaN;const n=Number(x);return Number.isFinite(n)?n:NaN};
 const isActive=(status:string)=>!["DELIVERED","CANCELLED","FAILED"].includes(status);
 function reply(body:unknown,status=200){
  return new Response(JSON.stringify(body),{status,headers:{
@@ -57,7 +57,8 @@ function sanitizedError(e:any){
  const msg=txt(e?.message);
  const errs=["job_unavailable","offer_expired_or_used","offer_not_found",
   "not_assigned_driver","invalid_driver_transition","incorrect_confirmation_code",
-  "collection_not_confirmed","location_not_allowed","invalid_location","courier_not_approved"];
+  "collection_not_confirmed","location_not_allowed","invalid_location","courier_not_approved",
+  "courier_not_available","courier_busy","invalid_received_amount"];
  return errs.find(x=>msg.includes(x))||"operation_failed";
 }
 const parseId=(v:unknown)=>txt(v).replace(/^supabase:/i,"");
@@ -79,9 +80,10 @@ Deno.serve(async(req:Request)=>{
   uid=txt(verified.payload.sub);
   if(!uid)throw Error("missing_uid");
  }catch{return reply({ok:false,error:"invalid_firebase_token"},401)}
- const raw=await req.text();
+ let raw:string;try{raw=await req.text()}catch{return reply({ok:false,error:"invalid_request"},400)}
  if(new TextEncoder().encode(raw).length>8192)return reply({ok:false,error:"payload_too_large"},413);
  let body:any;try{body=JSON.parse(raw)}catch{return reply({ok:false,error:"invalid_json"},400)}
+ if(!body||typeof body!=="object"||Array.isArray(body))return reply({ok:false,error:"invalid_json"},400);
  const action=txt(body.action).toLowerCase();
  const admin=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});
  try{
@@ -198,18 +200,21 @@ Deno.serve(async(req:Request)=>{
    return reply({ok:true,document:document(job,true)});
   }
   if(action==="accept"){
-   // Somente novas corridas; nunca suspender uma entrega em andamento.
+   // Include the accepted offer: the database decides whether this is a safe
+   // replay. Do not reject retries just because the original offer expired.
+   const offer=await admin.from("up_dispatch_offers").select("id,status")
+    .eq("job_id",missionId).eq("courier_id",courier.id)
+    .in("status",["PENDING","ACCEPTED"])
+    .order("created_at",{ascending:false}).limit(1);
+   if(offer.error)throw offer.error;
+   if(!offer.data?.length)return reply({ok:false,error:"offer_not_found"},409);
+   // Battery limits apply only to a new acceptance, never to a replay.
    const tele=obj(obj(courier.metadata).telemetry);
    const level=tele.battery_level;
    const at=Date.parse(txt(tele.at));
-   if(typeof level==="number"&&Number.isInteger(level)&&level>=0&&level<15
+   if(offer.data[0].status!=="ACCEPTED" && typeof level==="number"&&Number.isInteger(level)&&level>=0&&level<15
        &&Number.isFinite(at)&&at<=Date.now()+60000&&Date.now()-at<=300000)
     return reply({ok:false,error:"battery_below_minimum",minimum_battery_percent:15},409);
-   const offer=await admin.from("up_dispatch_offers").select("id")
-    .eq("job_id",missionId).eq("courier_id",courier.id)
-    .eq("status","PENDING").gt("expires_at",now).limit(1);
-   if(offer.error)throw offer.error;
-   if(!offer.data?.length)return reply({ok:false,error:"offer_not_found"},409);
    const accepted=await admin.rpc("up_driver_accept",{
     p_job:missionId,p_courier:courier.id,p_offer:offer.data[0].id
    });
@@ -238,8 +243,10 @@ Deno.serve(async(req:Request)=>{
   if(action==="stage"||action==="pickup"||action==="finish"){
    const stage=txt(body.status).toUpperCase();
    const next=action==="pickup"?"TO_CUSTOMER":action==="finish"?"DELIVERED":
-    stage==="COLETANDO"?"AT_STORE":stage==="NO_CLIENTE"?"AT_CUSTOMER":
-    stage==="EM_ENTREGA"?"TO_CUSTOMER":"TO_STORE";
+    ({COLETANDO:"AT_STORE",AT_STORE:"AT_STORE",NO_CLIENTE:"AT_CUSTOMER",
+      AT_CUSTOMER:"AT_CUSTOMER",EM_ENTREGA:"TO_CUSTOMER",TO_CUSTOMER:"TO_CUSTOMER",
+      A_CAMINHO_LOJA:"TO_STORE",TO_STORE:"TO_STORE"} as Record<string,string>)[stage];
+   if(!next)return reply({ok:false,error:"invalid_driver_transition"},422);
    const received=action==="finish"?num(body.received_amount):0;
    const result=await admin.rpc("up_driver_advance",{
     p_job:job.id,p_courier:courier.id,p_next:next,
@@ -263,3 +270,4 @@ Deno.serve(async(req:Request)=>{
   return reply({ok:false,error:"driver_api_failed"},500);
  }
 });
+
