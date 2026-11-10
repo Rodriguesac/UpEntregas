@@ -358,6 +358,7 @@ public class MainActivity extends AppCompatActivity {
         sw.setShowText(false);
         sw.setOnCheckedChangeListener((b, v) -> {
             if (hasRide) return;
+            if (v && !batteryAllowsNewWork()) { sw.setChecked(false); return; }
             if (v && !hasInternet()) {
                 sw.setChecked(false);
                 toast("Sem internet. Conecte-se para ficar online.");
@@ -470,7 +471,7 @@ public class MainActivity extends AppCompatActivity {
             storeText.setOrientation(LinearLayout.VERTICAL);
             storeText.setPadding(Ui.dp(this, 10), 0, 0, 0);
             storeText.addView(Ui.muted(this, "Retirada", 10));
-            storeText.addView(Ui.text(this, "Rodrigues Açaí e Cia", 16, true));
+            storeText.addView(Ui.text(this, routeStoreName(), 16, true));
             if (!storeAddress.isEmpty()) storeText.addView(Ui.muted(this, storeAddress, 12));
             storeHeader.addView(storeText, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
             hero.addView(storeHeader);
@@ -527,7 +528,7 @@ public class MainActivity extends AppCompatActivity {
             storeText.setOrientation(LinearLayout.VERTICAL);
             storeText.setPadding(Ui.dp(this, 11), 0, 0, 0);
             storeText.addView(Ui.muted(this, atStore ? "Você chegou à loja" : "Sua próxima parada", 10));
-            storeText.addView(Ui.text(this, "Rodrigues Açaí e Cia", 18, true));
+            storeText.addView(Ui.text(this, routeStoreName(), 18, true));
             storeText.addView(Ui.muted(this, labelOrDash(storeAddress), 13));
             storeHeader.addView(storeText, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
             hero.addView(storeHeader);
@@ -642,8 +643,8 @@ public class MainActivity extends AppCompatActivity {
         String meta = (extraKm > 0 ? String.format(Locale.forLanguageTag("pt-BR"), "+ %.1f km", extraKm) : "Mesmo ponto de retirada") +
                 (extraFee > 0 ? " • + " + formatMoney(extraFee) : "");
         TextView m = Ui.text(this, meta, 14, true); m.setTextColor(Ui.color(this, R.color.up_success)); card.addView(m);
-        card.addView(Ui.muted(this, "Sua retirada ainda não foi confirmada. Se aceitar, esta corrida vira uma rota múltipla sem perder o pedido atual.", 12));
-        Button add = Ui.greenButton(this, "Adicionar à minha rota");
+        card.addView(Ui.muted(this, "A loja ofereceu um pacote com mais uma entrega. Você apenas aceita ou recusa, antes da retirada.", 12));
+        Button add = Ui.greenButton(this, "Aceitar complemento da loja");
         Button reject = Ui.outlineButton(this, "Recusar complemento");
         add.setOnClickListener(v -> {
             if (!requireInternetForAction()) return;
@@ -661,7 +662,7 @@ public class MainActivity extends AppCompatActivity {
                     toast("Pedido adicionado. Sua rota foi atualizada.");
                     render();
                 }).addOnFailureListener(e -> { toast(e.getMessage()); reloadRide(); });
-            }).addOnFailureListener(e -> { add.setEnabled(true); reject.setEnabled(true); add.setText("Adicionar à minha rota"); toast(e.getMessage()); });
+            }).addOnFailureListener(e -> { add.setEnabled(true); reject.setEnabled(true); add.setText("Aceitar complemento da loja"); toast(e.getMessage()); });
         });
         reject.setOnClickListener(v -> {
             reject.setEnabled(false); add.setEnabled(false);
@@ -1263,15 +1264,15 @@ public class MainActivity extends AppCompatActivity {
         String meta = (extraKm > 0 ? String.format(Locale.forLanguageTag("pt-BR"), "+ %.1f km", extraKm) : "Mesmo ponto de retirada") +
                 (extraFee > 0 ? " • + " + formatMoney(extraFee) : "");
         TextView m = Ui.text(this, meta, 14, true); m.setTextColor(Ui.color(this, R.color.up_success)); card.addView(m);
-        card.addView(Ui.muted(this, "Você ainda não retirou os pedidos. Aceite para incluir esta entrega na mesma rota, ou recuse sem perder a rota atual.", 12));
-        Button add = Ui.greenButton(this, "Adicionar à minha rota");
+        card.addView(Ui.muted(this, "A loja ofereceu este complemento antes da retirada. Aceite ou recuse sem perder a rota atual.", 12));
+        Button add = Ui.greenButton(this, "Aceitar complemento da loja");
         Button reject = Ui.outlineButton(this, "Recusar complemento");
         add.setOnClickListener(v -> {
             if (!requireInternetForAction()) return;
             add.setEnabled(false); reject.setEnabled(false); add.setText("Adicionando…");
             repo.acceptRouteComplement(driverId, rideId).addOnSuccessListener(x -> {
-                OfferAlertPlayer.stop(); toast("Pedido adicionado à rota."); reloadRide();
-            }).addOnFailureListener(e -> { add.setEnabled(true); reject.setEnabled(true); add.setText("Adicionar à minha rota"); toast(e.getMessage()); });
+                OfferAlertPlayer.stop(); toast("Complemento da loja aceito."); reloadRide();
+            }).addOnFailureListener(e -> { add.setEnabled(true); reject.setEnabled(true); add.setText("Aceitar complemento da loja"); toast(e.getMessage()); });
         });
         reject.setOnClickListener(v -> {
             reject.setEnabled(false); add.setEnabled(false);
@@ -2185,7 +2186,7 @@ public class MainActivity extends AppCompatActivity {
         labels.setOrientation(LinearLayout.VERTICAL);
         labels.setPadding(Ui.dp(this, 10), 0, 0, 0);
         labels.addView(Ui.text(this, "UP Entregas", 14, true));
-        labels.addView(Ui.muted(this, "Rodrigues Açaí e Cia • " + BuildConfig.VERSION_NAME, 11));
+        labels.addView(Ui.muted(this, "UP Entregas • " + BuildConfig.VERSION_NAME, 11));
         brand.addView(labels, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         about.addView(brand);
         root.addView(about);
@@ -2490,7 +2491,7 @@ public class MainActivity extends AppCompatActivity {
 
     private String routeStoreName() {
         String x = DriverRepository.first(ride, "coletaNome", "lojaNome", "storeName");
-        return x == null || x.trim().isEmpty() ? "Rodrigues Açaí e Cia" : x.trim();
+        return x == null || x.trim().isEmpty() ? "Estabelecimento" : x.trim();
     }
 
     private static double numberFrom(DocumentSnapshot d, String field) {
