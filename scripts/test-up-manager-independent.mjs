@@ -79,6 +79,10 @@ assert.ok(api.includes('action==="integration_health"'),"Manager integration dia
 assert.ok(api.includes('authorizeRole(role,privateRoles);'),"Diagnostics require an administrator role");
 assert.ok(!api.includes("value:Deno.env.get("),"Never expose secrets as response fields");
 assert.ok(app.includes('function renderIntegrations()')&&app.includes('integration_health'),"Manager UI must display diagnostics");
+for(const item of ['action==="driver_diagnostics"','push_registered','gps_recent','firebase_linked','battery_recent'])
+ assert.ok(api.includes(item),"Missing private courier readiness diagnostics: "+item);
+for(const item of ["function driverDiagnosticsDialog(","data-action=\"driver-diagnostics\"","driver_diagnostics"])
+ assert.ok(app.includes(item),"Missing mobile courier readiness diagnostics UI: "+item);
 const merchantDraftSql=readFileSync("supabase/up-merchant-onboarding-drafts.sql","utf8");
 for(const item of [
  'action==="merchants_list"',
