@@ -8,6 +8,7 @@ const STORE={token:"",refreshToken:"",expires:0,user:null,page:"overview",
 const MENU=[
  {id:"overview",label:"Visão geral",short:"Início",icon:"⌂",desc:"Indicadores operacionais"},
  {id:"jobs",label:"Corridas",short:"Corridas",icon:"▤",desc:"Ofertas, eventos e andamento"},
+ {id:"merchants",label:"Lojas",icon:"▦",desc:"Estabelecimentos e pontos de coleta"},
  {id:"couriers",label:"Entregadores",short:"Entregadores",icon:"♙",desc:"Disponibilidade e situação"},
  {id:"applications",label:"Cadastros",icon:"▣",desc:"Análise e aprovação"},
  {id:"finance",label:"Financeiro",icon:"◈",desc:"Saldos e repasses registrados"},
@@ -153,7 +154,7 @@ async function login(event){
  }finally{button.disabled=false;button.textContent="Entrar no UP Gestor";}
 }
 function navigation(){
- const pages=MENU.filter(x=>["finance","audit","integrations"].includes(x.id)?
+ const pages=MENU.filter(x=>["finance","audit","integrations","merchants"].includes(x.id)?
    (x.id==="audit"?STORE.user?.role==="OWNER":isManager()):true);
  $("#sideNav").innerHTML=pages.map(x=>'<button type="button" data-action="go" data-page="'+x.id+'" '+
   'class="'+(STORE.page===x.id?"active":"")+'"><span class="nav-icon">'+x.icon+
@@ -171,7 +172,7 @@ function navigation(){
 async function navigate(next,reload=true){
  if(!allowedIds.has(next))return;
  if(next==="audit"&&STORE.user?.role!=="OWNER")return;
- if(["finance","integrations"].includes(next)&&!isManager())return;
+ if(["finance","integrations","merchants"].includes(next)&&!isManager())return;
  STORE.page=next;
  navigation();
  if(next==="more"){renderMore();return;}
@@ -182,7 +183,7 @@ async function load(page=STORE.page){
  STORE.busy=true;$("#refresh").disabled=true;
  $("#connection").textContent="Atualizando";$("#connection").classList.remove("offline");
  $("#main").innerHTML='<div class="loading-block">Carregando dados do UP…</div>';
- const calls={overview:"dashboard",jobs:"jobs_list",couriers:"couriers_list",
+ const calls={overview:"dashboard",jobs:"jobs_list",merchants:"merchants_list",couriers:"couriers_list",
   applications:"applications_list",finance:"finance",occurrences:"occurrences",audit:"audit",integrations:"integration_health"};
  try{
   STORE.data[page]=await call(calls[page]);
@@ -239,6 +240,25 @@ function jobCard(j){
  '<div class="actions"><button class="button secondary" data-action="view-job" data-id="'+j.id+
  '">Detalhes</button>'+(canOffer?'<button class="button primary" data-action="send-offer" data-id="'+j.id+'">Oferecer corrida</button>':"")+
  '</div></article>';
+}
+function renderMerchants(){
+ const merchants=STORE.data.merchants?.merchants||[];
+ $("#main").innerHTML=
+  '<p class="page-intro">Cadastre e acompanhe as lojas contratantes sem misturar seus pedidos com o Rodrigues Açaí.</p>'+
+  (STORE.user?.role==="OWNER"?'<div class="actions"><button class="button primary" data-action="merchant-draft">Cadastrar nova loja</button></div>':"")+
+  '<div class="stat-grid">'+kpi("Lojas cadastradas",merchants.length,"Todas as etapas de contratação")+
+  kpi("Em rascunho",merchants.filter(m=>m.state==="DRAFT").length,"Não podem solicitar entregadores")+
+  kpi("Lojas ativas",merchants.filter(m=>m.state==="ACTIVE").length,"Liberadas pela administração")+'</div>'+
+  '<div class="section-head"><h2>Estabelecimentos</h2></div><div class="record-grid">'+
+  (merchants.length?merchants.map(m=>'<article class="record">'+
+   '<div class="record-head"><h3>'+escapeHtml(m.display_name)+'</h3>'+badge(m.state)+'</div>'+
+   '<p class="small">'+escapeHtml(m.slug)+'</p>'+
+   (m.locations||[]).map(l=>'<div class="details-grid">'+
+    smallInfo("Retirada",l.label)+smallInfo("Status do ponto",label(l.state))+
+    smallInfo("Endereço",[l.street,l.number,l.neighborhood,l.city,l.state_code].filter(Boolean).join(", "))+
+   '</div>').join("")+
+   '</article>').join(""):empty("Nenhuma loja cadastrada."))+'</div>'+
+  '<div class="warning-note">Novas lojas entram como rascunho, sem integração, cobrança ou corridas automáticas. A ativação requer conferência contratual e operacional.</div>';
 }
 function renderCouriers(){
  const couriers=STORE.data.couriers?.couriers||[];
@@ -334,7 +354,7 @@ function renderIntegrations(){
 function renderMore(){
  $("#main").innerHTML='<p class="page-intro">Cada função administrativa está organizada na área correspondente.</p>'+
  '<div class="more-grid">'+MENU.filter(x=>!["overview","jobs","couriers"].includes(x.id)&&
-  (!["finance","integrations"].includes(x.id)||isManager())&&(x.id!=="audit"||STORE.user?.role==="OWNER"))
+  (!["finance","integrations","merchants"].includes(x.id)||isManager())&&(x.id!=="audit"||STORE.user?.role==="OWNER"))
  .map(x=>'<button class="more-card" data-action="go" data-page="'+x.id+'">'+
   x.icon+" "+x.label+"<span>"+escapeHtml(x.desc)+'</span></button>').join("")+
  '<button class="more-card" data-action="logout">Sair da conta<span>Encerrar sessão administrativa</span></button></div>';
@@ -342,6 +362,7 @@ function renderMore(){
 function render(){
  if(STORE.page==="overview")renderOverview();
  else if(STORE.page==="jobs")renderJobs();
+ else if(STORE.page==="merchants")renderMerchants();
  else if(STORE.page==="couriers")renderCouriers();
  else if(STORE.page==="applications")renderApplications();
  else if(STORE.page==="finance")renderFinance();
@@ -385,6 +406,46 @@ async function jobDetail(jobId){
  (r.events.length?r.events.map(x=>'<p class="small"><strong>#'+escapeHtml(x.sequence)+
  " — "+escapeHtml(label(x.status))+'</strong> • '+date(x.occurred_at)+'</p>').join(""):empty("Nenhum evento."));
  dialog("Detalhes da corrida",info+offers+events);
+}
+async function merchantDraftDialog(){
+ if(STORE.user?.role!=="OWNER"){notice("Cadastro de lojas exige o proprietário do UP.",true);return}
+ const field=(id,title,max=120,attributes="")=>
+  '<label for="'+id+'">'+escapeHtml(title)+'</label>'+
+  '<input class="field" id="'+id+'" maxlength="'+max+'" autocomplete="off" '+attributes+'>';
+ dialog("Nova loja no UP",
+  '<p class="small">O cadastro fica em RASCUNHO, sem gerar corridas ou cobranças.</p>'+
+  field("merchantName","Nome comercial",150,'required')+
+  field("merchantSlug","Identificador único (letras, números e hífens)",70,'placeholder="nome-da-loja"')+
+  field("merchantPickup","Nome do ponto de retirada",120,'value="Loja principal"')+
+  field("merchantStreet","Rua do estabelecimento",180,'required')+
+  field("merchantNumber","Número",20)+
+  field("merchantNeighborhood","Bairro",120)+
+  field("merchantCity","Cidade",120,'required')+
+  field("merchantUF","UF",2,'placeholder="MS" maxlength="2"'),
+  "Salvar rascunho",async()=>{
+   const display_name=text($("#merchantName").value);
+   const slug=text($("#merchantSlug").value).toLowerCase()||
+    display_name.normalize("NFD").replace(/[\\u0300-\\u036f]/g,"")
+     .toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,70);
+   const location={
+    label:text($("#merchantPickup").value),
+    street:text($("#merchantStreet").value),
+    number:text($("#merchantNumber").value),
+    neighborhood:text($("#merchantNeighborhood").value),
+    city:text($("#merchantCity").value),
+    state_code:text($("#merchantUF").value).toUpperCase()
+   };
+   if(display_name.length<3||display_name.length>150||
+      !/^[a-z0-9][a-z0-9-]{2,69}$/.test(slug)||
+      location.label.length<2||location.street.length<3||
+      location.city.length<2||!/^[A-Z]{2}$/.test(location.state_code))
+    throw Error("Informe nome, identificador, retirada, rua, cidade e UF válidos.");
+   if(!confirm("Salvar esta loja como RASCUNHO, sem autorizar corridas?"))return false;
+   const result=await call("merchant_draft_create",{display_name,slug,location});
+   if(!result.merchant_id)throw Error("O UP não confirmou o registro.");
+   notice("Loja cadastrada como rascunho; nenhuma entrega foi contratada.");
+   await load("merchants");
+  });
 }
 async function manualJobDialog(){
  const result=await call("merchant_locations");
@@ -539,7 +600,8 @@ document.addEventListener("click",async event=>{
  if(action==="filter"){STORE.filter=target.dataset.filter;render();return}
  if(STORE.busy)return;
  try{
-  if(action==="view-job")await jobDetail(target.dataset.id);
+  if(action==="merchant-draft")await merchantDraftDialog();
+  else if(action==="view-job")await jobDetail(target.dataset.id);
   else if(action==="new-job")await manualJobDialog();
   else if(action==="send-offer")await offerDialog(target.dataset.id);
   else if(action==="review-application")await reviewDialog(target.dataset.id);
