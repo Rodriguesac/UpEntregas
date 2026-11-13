@@ -79,4 +79,27 @@ assert.ok(api.includes('action==="integration_health"'),"Manager integration dia
 assert.ok(api.includes('authorizeRole(role,privateRoles);'),"Diagnostics require an administrator role");
 assert.ok(!api.includes("value:Deno.env.get("),"Never expose secrets as response fields");
 assert.ok(app.includes('function renderIntegrations()')&&app.includes('integration_health'),"Manager UI must display diagnostics");
+const merchantDraftSql=readFileSync("supabase/up-merchant-onboarding-drafts.sql","utf8");
+for(const item of [
+ 'action==="merchants_list"',
+ 'action==="merchant_draft_create"',
+ 'up_manager_create_merchant_draft',
+ 'if(role!=="OWNER")',
+])assert.ok(api.includes(item),"UP multi-store API security contract missing: "+item);
+for(const item of [
+ 'function renderMerchants()',
+ 'function merchantDraftDialog()',
+ 'merchant_draft_create',
+ 'merchants_list',
+ 'Cadastro de lojas exige o proprietário',
+])assert.ok(app.includes(item),"UP multi-store UI contract missing: "+item);
+for(const item of [
+ "create or replace function public.up_manager_create_merchant_draft(",
+ "values(slug_clean,name_clean,'DRAFT')",
+ "uf_clean,'DRAFT',true",
+ "up_audit_log",
+ "revoke all on function public.up_manager_create_merchant_draft(",
+ "to service_role;"
+])assert.ok(merchantDraftSql.includes(item),"UP draft-only SQL contract missing: "+item);
+assert.ok(!merchantDraftSql.toLowerCase().includes("security definer"),"No SECURITY DEFINER in merchant onboarding");
 console.log("PASS UP Gestor: Firebase JWT, roles, RLS, review, offerings, payments, mobile UI and secret hygiene");
