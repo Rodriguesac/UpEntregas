@@ -1,0 +1,25 @@
+name: UP API - Smoke autenticacao sem pedidos
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/smoke-up-prod-readonly.mjs'
+      - '.github/workflows/smoke-up-api.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Conferir sintaxe dos testes
+        run: node --check scripts/smoke-up-prod-readonly.mjs
+      - name: Testar URLs reais e bloqueios de autenticação sem criar pedidos
+        run: node scripts/smoke-up-prod-readonly.mjs
