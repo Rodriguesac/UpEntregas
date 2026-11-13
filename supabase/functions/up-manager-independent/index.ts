@@ -33,11 +33,14 @@ const maxPayload=12288;
 Deno.serve(async req=>{
  const origin=txt(req.headers.get("origin"));
  const hosts=(Deno.env.get("UP_MANAGER_ALLOWED_ORIGINS")||"").split(",").map(x=>x.trim()).filter(Boolean);
+ if(!hosts.includes("https://appassets.androidplatform.net"))hosts.push("https://appassets.androidplatform.net");
+ // Site web oficial do UP Gestor; requer Firebase JWT e papel de gestor no banco independente.
+ for(const allowed of ["https://upgestor-rac.web.app","https://upgestor-rac.firebaseapp.com"])
+  if(!hosts.includes(allowed))hosts.push(allowed);
  if(!hosts.length||!origin||!hosts.includes(origin))return fail(origin,403,"origin_not_allowed");
  if(req.method==="OPTIONS")return new Response(null,{status:204,headers:cors(origin)});
  if(req.method!=="POST")return fail(origin,405,"method_not_allowed");
- if(Deno.env.get("UP_INDEPENDENT_MANAGER_ENABLED")!=="true")
-  return fail(origin,503,"independent_manager_disabled");
+ 
  const url=Deno.env.get("SUPABASE_URL"),key=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
  if(!url||!key)return fail(origin,503,"service_not_configured");
  const token=txt(req.headers.get("authorization")).replace(/^Bearer\s+/i,"");
@@ -60,6 +63,11 @@ Deno.serve(async req=>{
   if(!actor.data?.active||!readingRoles.includes(actor.data.role))
    return fail(origin,403,"manager_not_authorized");
   const role=txt(actor.data.role);
+  if(Deno.env.get("UP_INDEPENDENT_MANAGER_ENABLED")!=="true"){
+   const gate=await db.from("up_settings").select("value").eq("id","runtime_manager").maybeSingle();
+   if(gate.error)throw gate.error;
+   if(gate.data?.value?.enabled!==true)return fail(origin,503,"independent_manager_disabled");
+  }
   const raw=await req.text();
   if(new TextEncoder().encode(raw).length>maxPayload)return fail(origin,413,"payload_too_large");
   let body:any;try{body=JSON.parse(raw)}catch{return fail(origin,400,"invalid_json")}
