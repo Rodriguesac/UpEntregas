@@ -163,6 +163,57 @@ Deno.serve(async req=>{
     sampled:all.length===1000});
   }
   // Authenticated UP dispatchers only; no keys or internal IDs from the browser are trusted.
+  // Novas lojas começam como rascunho e exigem liberação administrativa posterior.
+  if(action==="merchants_list"){
+   authorizeRole(role,privateRoles);
+   const merchants=await db.from("up_merchants")
+    .select("id,slug,display_name,state,created_at,up_merchant_locations(id,label,street,number,neighborhood,city,state_code,state,is_default)")
+    .order("display_name",{ascending:true}).limit(200);
+   if(merchants.error)throw merchants.error;
+   return reply(origin,{ok:true,merchants:(merchants.data||[]).map((m:any)=>({
+    id:m.id,slug:m.slug,display_name:m.display_name,state:m.state,
+    created_at:m.created_at,
+    locations:(m.up_merchant_locations||[]).map((l:any)=>({
+     id:l.id,label:l.label,street:l.street,number:l.number,
+     neighborhood:l.neighborhood,city:l.city,state_code:l.state_code,
+     state:l.state,is_default:l.is_default
+    }))
+   }))});
+  }
+  if(action==="merchant_draft_create"){
+   if(role!=="OWNER")return fail(origin,403,"owner_required");
+   const displayName=txt(body.display_name).slice(0,180);
+   const slug=txt(body.slug).toLowerCase();
+   const loc=obj(body.location);
+   const label=txt(loc.label).slice(0,120);
+   const street=txt(loc.street).slice(0,180);
+   const number=txt(loc.number).slice(0,20);
+   const neighborhood=txt(loc.neighborhood).slice(0,120);
+   const city=txt(loc.city).slice(0,120);
+   const stateCode=txt(loc.state_code).toUpperCase();
+   if(displayName.length<3||displayName.length>150||
+      !/^[a-z0-9][a-z0-9-]{2,69}$/.test(slug)||
+      label.length<2||street.length<3||city.length<2||
+      !/^[A-Z]{2}$/.test(stateCode))
+    return fail(origin,422,"invalid_merchant_draft");
+   const result=await db.rpc("up_manager_create_merchant_draft",{
+    p_actor:uid,p_display_name:displayName,p_slug:slug,
+    p_label:label,p_street:street,p_number:number,
+    p_neighborhood:neighborhood,p_city:city,p_state_code:stateCode
+   });
+   if(result.error){
+    if(result.error.code==="23505")return fail(origin,409,"merchant_slug_taken");
+    console.error("[UP merchant draft]",txt(result.error.code).slice(0,25));
+    return fail(origin,422,"merchant_registration_failed");
+   }
+   const created=result.data?.[0];
+   if(!created?.merchant_id||!created?.location_id)
+    return fail(origin,500,"merchant_draft_not_confirmed");
+   return reply(origin,{ok:true,merchant_id:created.merchant_id,
+    location_id:created.location_id,state:"DRAFT",
+    note:"Loja registrada como rascunho; nenhuma corrida é liberada."});
+  }
+
   if(action==="merchant_locations"){
    authorizeRole(role,operatingRoles);
    const r=await db.from("up_merchants")
