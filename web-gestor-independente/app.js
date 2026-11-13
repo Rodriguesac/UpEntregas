@@ -269,7 +269,7 @@ function renderCouriers(){
   smallInfo("Presença",c.online?"Online":"Offline")+
   smallInfo("Último GPS",date(c.last_location_at))+
   '</div>'+(c.state==="PENDING"?'<div class="warning-note">Importação pendente. Confira identificação e documentos no cadastro anterior antes de aprovar. O entregador não pode receber ofertas.</div>':"")+
- (isManager()?'<div class="actions"><button class="button '+(c.state==="SUSPENDED"||c.state==="PENDING"?"green":"secondary")+
+ (isManager()?'<div class="actions"><button class="button secondary" data-action="driver-diagnostics" data-id="'+c.id+'">Diagnóstico do app</button><button class="button '+(c.state==="SUSPENDED"||c.state==="PENDING"?"green":"secondary")+
   '" data-action="driver-state" data-id="'+c.id+'" data-state="'+(c.state==="SUSPENDED"||c.state==="PENDING"?"APPROVED":"SUSPENDED")+
   '" data-review-required="'+(c.state==="PENDING"?"true":"false")+'">'+
   (c.state==="PENDING"?"Revisar e aprovar":c.state==="SUSPENDED"?"Reativar":"Suspender")+'</button></div>':"")+
@@ -447,6 +447,36 @@ async function merchantDraftDialog(){
    await load("merchants");
   });
 }
+async function driverDiagnosticsDialog(courierId){
+ if(!isManager())throw Error("Somente administradores podem ver diagnóstico de operação.");
+ const result=await call("driver_diagnostics",{courier_id:courierId});
+ const d=result.driver;
+ if(!d)throw Error("Entregador não encontrado no banco independente.");
+ const row=(text,ok,details="")=>
+  '<article class="record"><div class="record-head"><h3>'+escapeHtml(text)+'</h3>'+
+  '<span class="pill '+(ok?"good":"wait")+'">'+(ok?"OK":"Pendente")+'</span></div>'+
+  (details?'<p class="small">'+escapeHtml(details)+'</p>':"")+'</article>';
+ const connected=d.firebase_linked===true;
+ const active=d.online===true;
+ const push=d.push_registered===true;
+ const batteryRecent=d.battery_recent===true;
+ const batterySafe=batteryRecent&&Number(d.battery_percent)>=15;
+ const gps=d.gps_recent===true;
+ const name=escapeHtml(d.name||"Entregador");
+ const html='<p class="small">Indicadores reais, sem divulgar localização precisa ou tokens do aparelho.</p>'+
+  '<div class="record-grid">'+
+  row("Cadastro aprovado",d.state==="APPROVED","Estado: "+label(d.state))+
+  row("Identidade Firebase",connected,"Vinculação com a conta autorizada")+
+  row("Disponibilidade",active,"Toque em Online no aplicativo do motoboy")+
+  row("Notificação FCM",push,push?"Aparelho registrado":"Abrir o app, conceder notificações e ficar online")+
+  row("Bateria",batterySafe,batteryRecent?
+   String(d.battery_percent)+"% (mínimo 15%)":"Sem telemetria recente do aplicativo")+
+  row("GPS recente",gps,gps?"GPS recebido nos últimos 2 minutos":"Sem posição recente comprovada")+
+  row("Corrida ativa",!!d.active_job_status,d.active_job_status?label(d.active_job_status):"Nenhuma corrida atribuída")+
+  '</div><p class="small">Último GPS informado: '+escapeHtml(date(d.gps_last_at))+
+  '</p><p class="small">O GPS do cliente somente aparece após a retirada e com a permissão do pedido.</p>';
+ dialog("Diagnóstico UP • "+name,html);
+}
 async function manualJobDialog(){
  const result=await call("merchant_locations");
  const points=(result.merchants||[]).flatMap(m=>(m.locations||[]).map(l=>({
@@ -601,6 +631,7 @@ document.addEventListener("click",async event=>{
  if(STORE.busy)return;
  try{
   if(action==="merchant-draft")await merchantDraftDialog();
+  else if(action==="driver-diagnostics")await driverDiagnosticsDialog(target.dataset.id);
   else if(action==="view-job")await jobDetail(target.dataset.id);
   else if(action==="new-job")await manualJobDialog();
   else if(action==="send-offer")await offerDialog(target.dataset.id);
