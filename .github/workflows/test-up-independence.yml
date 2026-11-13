@@ -6,6 +6,8 @@ on:
       - 'supabase/up-independent-schema.sql'
       - 'supabase/up-driver-operations.sql'
       - 'supabase/up-manager-independent.sql'
+      - 'supabase/up-merchant-onboarding-drafts.sql'
+      - 'scripts/verify-up-merchant-drafts.sh'
       - 'supabase/up-offer-notifications.sql'
       - 'supabase/up-multimerchant-foundation.sql'
       - 'supabase/up-manual-dispatch.sql'
@@ -107,6 +109,7 @@ jobs:
           bash scripts/verify-up-postgres.sh
           bash scripts/verify-up-driver-postgres.sh
           bash scripts/verify-up-manager-postgres.sh
+          bash scripts/verify-up-merchant-drafts.sh
           bash scripts/verify-up-e2e.sh
       - name: Empacotar novo painel do UP (sem publicar)
         uses: actions/upload-artifact@v4
