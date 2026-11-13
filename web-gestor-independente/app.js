@@ -425,7 +425,7 @@ async function merchantDraftDialog(){
   "Salvar rascunho",async()=>{
    const display_name=text($("#merchantName").value);
    const slug=text($("#merchantSlug").value).toLowerCase()||
-    display_name.normalize("NFD").replace(/[\\u0300-\\u036f]/g,"")
+    display_name.normalize("NFD").replace(/[\u0300-\u036f]/g,"")
      .toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,70);
    const location={
     label:text($("#merchantPickup").value),
