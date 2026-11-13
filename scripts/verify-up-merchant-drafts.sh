@@ -2,6 +2,9 @@
 # Executa SOMENTE contra o PostgreSQL descartável up_test do GitHub Actions.
 set -euo pipefail
 : "${PGPASSWORD:?Senha do PostgreSQL descartável obrigatória}"
+# A arquitetura original não carrega tabelas multi-loja no up_test.
+# Criar o fundamento antes do RPC, sempre no banco descartável.
+psql -X -v ON_ERROR_STOP=1 -d up_test -f supabase/up-multimerchant-foundation.sql
 psql -X -v ON_ERROR_STOP=1 -d up_test -f supabase/up-merchant-onboarding-drafts.sql
 psql -X -v ON_ERROR_STOP=1 -d up_test <<'SQL'
 SET ROLE service_role;
