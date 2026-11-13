@@ -277,6 +277,45 @@ Deno.serve(async req=>{
    if(!job.data)return fail(origin,404,"job_not_found");
    return reply(origin,{ok:true,job:job.data,events:events.data||[],offers:offers.data||[]});
   }
+  // Diagnóstico sem geolocalização precisa e sem tokens privados.
+  // Apenas gestor autorizado pode verificar readiness de um entregador.
+  if(action==="driver_diagnostics"){
+   authorizeRole(role,privateRoles);
+   const courierId=id(body.courier_id);
+   const [courier,devices,activeJob]=await Promise.all([
+    db.from("up_couriers")
+     .select("id,display_name,state,online,last_location_at,tracking_enabled,metadata,firebase_uid")
+     .eq("id",courierId).maybeSingle(),
+    db.from("up_driver_devices").select("id,active,updated_at")
+     .eq("courier_id",courierId).eq("active",true).limit(20),
+    db.from("up_jobs").select("id,status")
+     .eq("assigned_courier_id",courierId)
+     .not("status","in",'("DELIVERED","CANCELLED","FAILED")')
+     .order("updated_at",{ascending:false}).limit(1)
+   ]);
+   if(courier.error||devices.error||activeJob.error)throw Error("diagnostics_query_failed");
+   if(!courier.data)return fail(origin,404,"courier_not_found");
+   const c=courier.data;
+   const telemetry=obj(obj(c.metadata).telemetry);
+   const seen=Date.parse(txt(telemetry.at));
+   const gps=Date.parse(txt(c.last_location_at));
+   const recent=(value:number,range:number)=>
+    Number.isFinite(value)&&Date.now()-value>=-30000&&Date.now()-value<=range;
+   const battery=Number(telemetry.battery_level);
+   return reply(origin,{ok:true,driver:{
+    id:c.id,name:c.display_name,state:c.state,online:c.online===true,
+    firebase_linked:txt(c.firebase_uid).length>=8,
+    push_registered:(devices.data||[]).length>0,
+    push_device_count:(devices.data||[]).length,
+    battery_percent:Number.isInteger(battery)&&battery>=0&&battery<=100?battery:null,
+    battery_recent:recent(seen,300000),
+    gps_recent:recent(gps,120000),
+    gps_last_at:c.last_location_at||null,
+    gps_tracking_enabled:c.tracking_enabled===true,
+    active_job_status:activeJob.data?.[0]?.status||null,
+    note:"Sem coordenadas, contatos, chaves privadas ou tokens do entregador."
+   }});
+  }
   if(action==="couriers_list"){
    const r=await db.from("up_couriers")
     .select("id,display_name,phone,state,online,tracking_enabled,last_location_at,vehicle,updated_at")
