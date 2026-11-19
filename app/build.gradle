@@ -21,8 +21,18 @@ android {
         // Endpoint público configurável em build. Nenhum segredo privado no APK.
         // Valores padrão preservam a conexão da versão já em produção.
         def upDriverApiUrl = project.findProperty('upDriverApiUrl') ?: 'https://fdqqwdplprzpqufpgdrm.supabase.co/functions/v1/driver-api'
+        def upRegistrationApiUrl = project.findProperty('upRegistrationApiUrl') ?: 'https://fdqqwdplprzpqufpgdrm.supabase.co/functions/v1/driver-registration'
         def upPublishableKey = project.findProperty('upPublishableKey') ?: 'sb_publishable_yV7nuzH5yz17PzGRVK3o5g_UNvt7b4d'
+        // Uma build não pode cadastrar motoristas em um Supabase e enviar GPS a outro.
+        def driverUrl = new java.net.URI(upDriverApiUrl.toString())
+        def registrationUrl = new java.net.URI(upRegistrationApiUrl.toString())
+        if (driverUrl.scheme != 'https' || registrationUrl.scheme != 'https'
+                || driverUrl.host != registrationUrl.host
+                || driverUrl.rawUserInfo != null || registrationUrl.rawUserInfo != null) {
+            throw new GradleException('UP: APIs de corridas e cadastro devem usar o mesmo projeto HTTPS.')
+        }
         buildConfigField 'String', 'UP_DRIVER_API_URL', '"' + upDriverApiUrl.toString() + '"'
+        buildConfigField 'String', 'UP_REGISTRATION_API_URL', '"' + upRegistrationApiUrl.toString() + '"'
         buildConfigField 'String', 'UP_PUBLISHABLE_KEY', '"' + upPublishableKey.toString() + '"'
     }
 
