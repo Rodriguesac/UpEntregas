@@ -177,7 +177,12 @@ public final class SupabaseDriverApi {
                 String response = read(input);
                 JSONObject json = response.isEmpty() ? new JSONObject() : new JSONObject(response);
                 if (status < 200 || status >= 300) {
+                    String errorCode = json.optString("error", "");
                     String message = json.optString("message", json.optString("error", "Falha na operação."));
+                    if ("battery_below_minimum".equals(errorCode)) {
+                        message = "Bateria insuficiente. Carregue o celular até pelo menos "
+                                + json.optInt("minimum_battery_percent", 15) + "% para aceitar outra corrida.";
+                    }
                     throw new IllegalStateException(message);
                 }
                 source.setResult(json);

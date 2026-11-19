@@ -590,7 +590,7 @@ public class MainActivity extends AppCompatActivity {
             Button accept = Ui.greenButton(this, "Aceitar entrega");
             Button reject = Ui.outlineButton(this, "Recusar");
             accept.setOnClickListener(v -> {
-                if (!requireInternetForAction()) return;
+                if (!requireInternetForAction() || !batteryAllowsNewWork()) return;
                 accept.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM);
                 accept.setEnabled(false);
                 reject.setEnabled(false);
@@ -819,7 +819,7 @@ public class MainActivity extends AppCompatActivity {
             Button accept = Ui.button(this, "Aceitar rota");
             Button reject = Ui.outlineButton(this, "Recusar");
             accept.setOnClickListener(v -> {
-                if (!requireInternetForAction()) return;
+                if (!requireInternetForAction() || !batteryAllowsNewWork()) return;
                 accept.setEnabled(false); reject.setEnabled(false); accept.setText("Aceitando…");
                 repo.acceptRoute(driverId, rideId).addOnSuccessListener(x -> {
                     OfferAlertPlayer.stop();
@@ -2444,6 +2444,21 @@ public class MainActivity extends AppCompatActivity {
             recreate();
         });
         dialog.show();
+    }
+
+    // Apenas novas corridas: uma entrega em andamento nunca sera interrompida pela bateria.
+    private boolean batteryAllowsNewWork() {
+        DeviceStatus.Battery b = DeviceStatus.battery(this);
+        batteryLevel = b.level;
+        batteryCharging = b.charging;
+        if (b.level >= 0) {
+            repo.saveDeviceTelemetry(driverId, b.level, b.charging);
+            if (b.level < 15) {
+                toast("Bateria em " + b.level + "%. Recarregue o celular ate 15% para aceitar nova corrida.");
+                return false;
+            }
+        }
+        return true;
     }
 
     private void publishTelemetry() {
