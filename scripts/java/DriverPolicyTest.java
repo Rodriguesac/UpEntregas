@@ -26,6 +26,14 @@ public final class DriverPolicyTest {
         check(!GpsPolicy.shouldSend(20000,70000,100,65000,10,true),"reject cached point");
         check(!GpsPolicy.shouldSend(20000,70000,100,1000,Float.NaN,true),"reject invalid accuracy");
         check(GpsPolicy.shouldSend(20000,90000,0,1000,10,true),"retry fresh stationary point after outage");
+        check(GpsPolicy.deliveryInterval("TO_CUSTOMER",101)==30000,"far");
+        check(GpsPolicy.deliveryInterval("TO_CUSTOMER",100)==15000,"near");
+        check(GpsPolicy.deliveryInterval("TO_CUSTOMER",51)==15000,"near above 50");
+        check(GpsPolicy.deliveryInterval("TO_CUSTOMER",50)==5000,"very near");
+        check(GpsPolicy.deliveryInterval("TO_CUSTOMER",0)==5000,"destination");
+        check(GpsPolicy.deliveryInterval("AT_CUSTOMER",0)==30000,"arrived");
+        check(GpsPolicy.deliveryInterval("TO_CUSTOMER",Double.NaN)==30000,"unknown destination");
+        check(!GpsPolicy.validDeliveryFix(16000,10),"reject stale delivery fix");
         System.out.println("PASS Android policies: retries, idempotency, backoff, GPS throttle, freshness and reconnect");
     }
 }

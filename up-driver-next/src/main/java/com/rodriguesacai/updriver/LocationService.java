@@ -31,6 +31,10 @@ public final class LocationService extends Service {
     private FusedLocationProviderClient fused;
     private LocationCallback callback;
     private String mission = "";
+    private String phase = "";
+    private double customerLat = Double.NaN, customerLng = Double.NaN;
+    private long requestInterval = 0L;
+    private boolean forceNext;
     private boolean requesting, inFlight;
     private long lastAt, lastSuccess;
     private int generation;
@@ -52,8 +56,15 @@ public final class LocationService extends Service {
             stopUpdates();
             mission=incoming;
             lastAt=0;lastSuccess=0;generation++;inFlight=false;
-            lastSent=null;
+            lastSent=null; phase=""; forceNext=true;
         }
+        String nextPhase=intent.getStringExtra("mission_state");
+        if(nextPhase==null) nextPhase="";
+        if(!phase.equals(nextPhase)) { phase=nextPhase; forceNext=true; }
+        customerLat=intent.getDoubleExtra("customer_lat",Double.NaN);
+        customerLng=intent.getDoubleExtra("customer_lng",Double.NaN);
+        long desired=("TO_CUSTOMER".equals(phase)||"AT_CUSTOMER".equals(phase))?5000L:20000L;
+        if(requesting && requestInterval!=desired) stopUpdates();
         try {
             startForeground(NOTIFICATION_ID, notification());
             startUpdates();
@@ -87,13 +98,16 @@ public final class LocationService extends Service {
 
     private void startUpdates() {
         if(requesting || !permitted()) return;
-        LocationRequest request = new LocationRequest.Builder(Priority.PRIORITY_BALANCED_POWER_ACCURACY,20000L)
-            .setMinUpdateIntervalMillis(10000L)
-                        .build();
+        boolean enRoute="TO_CUSTOMER".equals(phase)||"AT_CUSTOMER".equals(phase);
+        requestInterval=enRoute?5000L:20000L;
+        LocationRequest request = new LocationRequest.Builder(enRoute?Priority.PRIORITY_HIGH_ACCURACY:Priority.PRIORITY_BALANCED_POWER_ACCURACY,requestInterval)
+            .setMinUpdateIntervalMillis(requestInterval)
+            .setMaxUpdateAgeMillis(0L)
+            .build();
         callback = new LocationCallback() {
             @Override public void onLocationResult(LocationResult result) {
                 if(result==null) return;
-                for(Location loc: result.getLocations()) maybeSend(loc);
+                maybeSend(result.getLastLocation());
             }
         };
         try {
@@ -110,8 +124,20 @@ public final class LocationService extends Service {
         if(Math.abs(loc.getLatitude())<0.00001 && Math.abs(loc.getLongitude())<0.00001)return;
         long now=SystemClock.elapsedRealtime();
         long age=(SystemClock.elapsedRealtimeNanos()-loc.getElapsedRealtimeNanos())/1000000L;
-        if(!GpsPolicy.shouldSend(now-lastAt,now-lastSuccess,
+        boolean customerPhase="TO_CUSTOMER".equals(phase)||"AT_CUSTOMER".equals(phase);
+        if(customerPhase) {
+            if(!GpsPolicy.validDeliveryFix(age,loc.getAccuracy()))return;
+            double meters=Double.NaN;
+            if(Double.isFinite(customerLat)&&Double.isFinite(customerLng)&&Math.abs(customerLat)<=90&&Math.abs(customerLng)<=180&&(customerLat!=0||customerLng!=0)) {
+                float[] d=new float[1];
+                Location.distanceBetween(loc.getLatitude(),loc.getLongitude(),customerLat,customerLng,d);
+                meters=d[0];
+            }
+            long interval=GpsPolicy.deliveryInterval(phase,meters);
+            if(!forceNext&&lastAt!=0&&now-lastAt<interval)return;
+        } else if(!GpsPolicy.shouldSend(now-lastAt,now-lastSuccess,
             lastSent==null?0:lastSent.distanceTo(loc),age,loc.getAccuracy(),lastSent!=null))return;
+        forceNext=false;
         final int sentGeneration=generation;
         lastAt=now;
         inFlight=true;
@@ -120,7 +146,8 @@ public final class LocationService extends Service {
             "accuracy",loc.getAccuracy()),new Backend.Callback(){
                 @Override public void onSuccess(JSONObject response) {
                     if(sentGeneration!=generation)return;
-                    inFlight=false;lastSuccess=SystemClock.elapsedRealtime();lastSent=new Location(loc);
+                    inFlight=false;
+                    if(response.optBoolean("history_saved",true)){lastSuccess=SystemClock.elapsedRealtime();lastSent=new Location(loc);}
                 }
                 @Override public void onError(String message) {
                     if(sentGeneration!=generation)return;

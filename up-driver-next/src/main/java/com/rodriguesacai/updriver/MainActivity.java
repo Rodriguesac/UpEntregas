@@ -515,7 +515,7 @@ public final class MainActivity extends ComponentActivity {
                 inFlight=false;
                 if("reject".equals(name)){mission=null;missionId="";stopLocation();screen="home";inform("Oferta recusada.");refreshOffer(false);}
                 else if("occurrence".equals(name)) {inform("Ocorrência enviada ao gestor.");}
-                else {notice="Etapa confirmada pelo UP.";loadMission();}
+                else {if("finish".equals(name))stopLocation();notice="Etapa confirmada pelo UP.";loadMission();}
             }
             @Override public void onError(String message){inFlight=false;inform(message);}
         });
@@ -843,6 +843,9 @@ public final class MainActivity extends ComponentActivity {
         }
         Intent intent=new Intent(this,LocationService.class);
         intent.putExtra("mission_id",missionId);
+        intent.putExtra("mission_state",mission.optString("upState",""));
+        intent.putExtra("customer_lat",mission.optDouble("clienteLat",Double.NaN));
+        intent.putExtra("customer_lng",mission.optDouble("clienteLng",Double.NaN));
         try{ContextCompat.startForegroundService(this,intent);}
         catch(Exception ex){notice="GPS indisponível neste momento. Verifique a permissão.";render();}
     }
