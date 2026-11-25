@@ -141,22 +141,34 @@ Deno.serve(async(req:Request)=>{
    return reply({ok:true});
   }
   if(action==="offer"){
+   // Refresh live availability at most once per ten minutes, never turn an offline courier online.
+   if(courier.online===true && Date.parse(txt(courier.updated_at))<Date.now()-600000){
+    const heartbeat=await admin.from("up_couriers").update({updated_at:now})
+     .eq("id",courier.id).eq("online",true).eq("state","APPROVED")
+     .lt("updated_at",new Date(Date.now()-600000).toISOString());
+    if(heartbeat.error)console.warn("UP offer heartbeat failed");
+   }
    const current=await admin.from("up_jobs").select("*,up_merchants!up_jobs_merchant_id_fkey(display_name)").eq("assigned_courier_id",courier.id)
     .not("status","in",'("DELIVERED","CANCELLED","FAILED")')
     .order("updated_at",{ascending:false}).limit(1);
    if(current.error)throw current.error;
-   if(current.data?.length)return reply({ok:true,document:document(current.data[0],false)});
-   const offers=await admin.from("up_dispatch_offers").select("job_id,expires_at")
+   if(current.data?.length)return reply({ok:true,online:courier.online===true,document:document(current.data[0],false)});
+   if(courier.online!==true)return reply({ok:true,online:false,document:null});
+   const offers=await admin.from("up_dispatch_offers").select("id,job_id,expires_at")
     .eq("courier_id",courier.id).eq("status","PENDING").gt("expires_at",now)
     .order("created_at",{ascending:true}).limit(20);
    if(offers.error)throw offers.error;
-   if(!offers.data?.length)return reply({ok:true,document:null});
+   if(!offers.data?.length)return reply({ok:true,online:true,document:null});
    const ids=offers.data.map((x:any)=>x.job_id);
    const jobs=await admin.from("up_jobs").select("*,up_merchants!up_jobs_merchant_id_fkey(display_name)").in("id",ids)
     .eq("status","OFFERED").is("assigned_courier_id",null);
    if(jobs.error)throw jobs.error;
    const job=offers.data.map((o:any)=>jobs.data?.find((j:any)=>j.id===o.job_id)).find(Boolean);
-   return reply({ok:true,document:job?document(job,true):null});
+   if(!job)return reply({ok:true,online:true,document:null});
+   const result=document(job,true);
+   const offer=offers.data.find((o:any)=>o.job_id===job.id);
+   return reply({ok:true,online:true,document:{...result,data:{...result.data,
+    offerId:offer?.id,offerExpiresAt:offer?.expires_at}}});
   }
   if(action==="history"){
    const hist=await admin.from("up_jobs").select("*,up_merchants!up_jobs_merchant_id_fkey(display_name)").eq("assigned_courier_id",courier.id)
