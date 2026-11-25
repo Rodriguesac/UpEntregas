@@ -49,9 +49,9 @@ jobs:
 
           test -s "$driver"
 
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$driver" | grep -Fq "package: name='com.rodriguesacai.updriver.independente' versionCode='107'"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$driver" | grep -Fq "package: name='com.rodriguesacai.updriver.independente' versionCode='108'"
 
-          cp "$driver" dist/UP-Entregador-1.0.7-Beta.apk
+          cp "$driver" dist/UP-Entregador-1.0.8-Beta.apk
 
           sha256sum dist/*.apk
       - uses: actions/upload-artifact@v4
@@ -78,14 +78,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tag="up-entregador-v1.0.7-beta"
+          tag="up-entregador-v1.0.8-beta"
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" dist/*.apk --clobber
           else
             gh release create "$tag" dist/*.apk \
               --target "${GITHUB_SHA}" \
-              --title "UP Entregador 1.0.7 Beta" \
-              --notes "Entregador 1.0.7-beta com cadastro Android Firebase dedicado. Notificações e entrega ponta a ponta ainda exigem teste real." \
+              --title "UP Entregador 1.0.8 Beta" \
+              --notes "Entregador 1.0.8-beta com abertura automática de oferta, alerta local e monitor online em segundo plano. FCM e teste real ainda pendentes." \
               --prerelease
           fi
           gh release view "$tag" --json url --jq .url
