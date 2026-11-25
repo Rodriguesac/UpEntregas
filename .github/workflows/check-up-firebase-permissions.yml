@@ -14,6 +14,9 @@ jobs:
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.UP_FIREBASE_SERVICE_ACCOUNT_JSON }}
           UP_DRIVER_ANDROID_CONFIG: ${{ secrets.UP_DRIVER_FIREBASE_GOOGLE_SERVICES_B64 }}
+          UP_FCM_SERVICE_ACCOUNT: ${{ secrets.UP_FCM_SERVICE_ACCOUNT_JSON }}
+          UP_SUPABASE_ACCESS_TOKEN: ${{ secrets.UP_SUPABASE_ACCESS_TOKEN }}
+          UP_DATABASE_URL: ${{ secrets.UP_DATABASE_URL }}
         shell: bash
         run: |
           if [ -n "$FIREBASE_SERVICE_ACCOUNT" ]; then
@@ -26,3 +29,7 @@ jobs:
           else
             echo "UP_DRIVER_ANDROID_CONFIG_CONFIGURED=no"
           fi
+
+          for name in UP_FCM_SERVICE_ACCOUNT UP_SUPABASE_ACCESS_TOKEN UP_DATABASE_URL; do
+            if [ -n "${!name}" ]; then echo "${name}_CONFIGURED=yes"; else echo "${name}_CONFIGURED=no"; fi
+          done
