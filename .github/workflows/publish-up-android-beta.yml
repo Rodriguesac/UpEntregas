@@ -1,4 +1,5 @@
 name: Publicar aplicativos UP Android (beta)
+# Rebuild 1.0.8 after Java callback correction
 on:
   push:
     branches: [exec/operational-reliability-20261110]
