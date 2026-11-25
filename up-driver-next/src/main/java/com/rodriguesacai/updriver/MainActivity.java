@@ -442,9 +442,10 @@ public final class MainActivity extends ComponentActivity {
                 JSONObject incoming=data.optJSONObject("document");
                 JSONObject before=mission;
                 String previousId=missionId;
+                String previousScreen=screen;
                 updateMission(incoming);
                 if(userAction)notice="Corridas atualizadas.";
-                if(userAction || !previousId.equals(missionId) || !java.util.Objects.equals(before==null?null:before.toString(),mission==null?null:mission.toString())) render();
+                if(userAction || !previousScreen.equals(screen) || !previousId.equals(missionId) || !java.util.Objects.equals(before==null?null:before.toString(),mission==null?null:mission.toString())) render();
             }
             @Override public void onError(String message){
                 loadingOffer=false;
