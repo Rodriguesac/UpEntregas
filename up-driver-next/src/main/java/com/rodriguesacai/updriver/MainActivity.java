@@ -51,15 +51,18 @@ public final class MainActivity extends ComponentActivity {
     private final Backend backend = new Backend();
     private final Runnable poll = new Runnable() {
         @Override public void run() {
-            if (approved && online && FirebaseAuth.getInstance().getCurrentUser() != null) {
+            if (visible && approved && online && FirebaseAuth.getInstance().getCurrentUser() != null) {
                 refreshOffer(false);
-                handler.postDelayed(this, 20000);
+                handler.postDelayed(this, 15000);
             }
         }
     };
     private LinearLayout root, body;
     private String screen = "home", verification = "Verificando cadastro...", notice = "";
     private boolean approved, online, inFlight, loadingOffer;
+    private boolean visible;
+    private String alertedMission = "";
+    private android.media.Ringtone offerRingtone;
     private JSONObject mission;
     private String missionId = "";
     private JSONArray history = new JSONArray();
@@ -83,13 +86,24 @@ public final class MainActivity extends ComponentActivity {
         else { screen = "login"; render(); }
     }
 
+    @Override protected void onStart() {
+        super.onStart();
+        visible=true; OfferMonitorService.setAppVisible(true);
+    }
+
     @Override protected void onResume() {
         super.onResume();
-        if (approved && online) refreshOffer(false);
+        if (approved && online) { beginPolling(); refreshOffer(false); }
+    }
+
+    @Override protected void onStop() {
+        visible=false; OfferMonitorService.setAppVisible(false);
+        handler.removeCallbacks(poll); stopOfferSound();
+        super.onStop();
     }
 
     @Override protected void onDestroy() {
-        handler.removeCallbacks(poll);
+        handler.removeCallbacks(poll); stopOfferSound();
         super.onDestroy();
     }
 
@@ -403,7 +417,7 @@ public final class MainActivity extends ComponentActivity {
             @Override public void onSuccess(JSONObject data){
                 inFlight=false;online=newValue;
                 if(online){requestNotifications();beginPolling();refreshOffer(false);}
-                else {handler.removeCallbacks(poll);}
+                else {handler.removeCallbacks(poll); OfferMonitorService.stop(this); stopOfferSound(); alertedMission="";}
                 inform(online?"Você está disponível para receber ofertas.":"Você está offline para novas ofertas.");
             }
             @Override public void onError(String message){inFlight=false;inform(message);}
@@ -412,7 +426,10 @@ public final class MainActivity extends ComponentActivity {
 
     private void beginPolling() {
         handler.removeCallbacks(poll);
-        if(approved && online) handler.postDelayed(poll,20000);
+        if(approved && online && visible) {
+            OfferMonitorService.start(this);
+            handler.postDelayed(poll,15000);
+        }
     }
 
     private void refreshOffer(boolean userAction) {
@@ -420,9 +437,14 @@ public final class MainActivity extends ComponentActivity {
         loadingOffer=true;
         backend.driver("offer",Backend.args(),new Backend.Callback(){
             @Override public void onSuccess(JSONObject data){
-                loadingOffer=false;updateMission(data.optJSONObject("document"));
+                loadingOffer=false;
+                if(isFinishing() || isDestroyed() || inFlight)return;
+                JSONObject incoming=data.optJSONObject("document");
+                JSONObject before=mission;
+                String previousId=missionId;
+                updateMission(incoming);
                 if(userAction)notice="Corridas atualizadas.";
-                render();
+                if(userAction || !previousId.equals(missionId) || !java.util.Objects.equals(before==null?null:before.toString(),mission==null?null:mission.toString())) render();
             }
             @Override public void onError(String message){
                 loadingOffer=false;
@@ -432,13 +454,19 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void updateMission(JSONObject doc) {
-        if(doc==null) { mission=null; missionId="";stopLocation();return; }
+        if(doc==null) { mission=null; missionId="";stopLocation();stopOfferSound();alertedMission="";return; }
         JSONObject data=doc.optJSONObject("data");
-        if(data==null) {mission=null;missionId="";stopLocation();return;}
+        if(data==null) {mission=null;missionId="";stopLocation();stopOfferSound();alertedMission="";return;}
         mission=data;
         missionId=doc.optString("id","").replace("supabase:","");
         String state=data.optString("upState","");
-        if(data.optBoolean("ofertaAtiva",false)) notifyFoundOffer(missionId);
+        if(data.optBoolean("ofertaAtiva",false) && online) {
+            if(visible && !missionId.equals(alertedMission)) {
+                alertedMission=missionId; screen="mission"; notice="Nova oferta disponível";
+                playOfferSound();
+            }
+            notifyFoundOffer(missionId);
+        } else { stopOfferSound(); alertedMission=""; }
         if(!data.optBoolean("ofertaAtiva") && activeState(state)) startLocationIfAllowed();
         else stopLocation();
     }
@@ -531,6 +559,7 @@ public final class MainActivity extends ComponentActivity {
         backend.driver(name,payload,new Backend.Callback(){
             @Override public void onSuccess(JSONObject response) {
                 inFlight=false;
+                if("accept".equals(name)||"reject".equals(name))stopOfferSound();
                 if("reject".equals(name)){mission=null;missionId="";stopLocation();screen="home";inform("Oferta recusada.");refreshOffer(false);}
                 else if("occurrence".equals(name)) {inform("Ocorrência enviada ao gestor.");}
                 else {if("finish".equals(name))stopLocation();notice="Etapa confirmada pelo UP.";loadMission();}
@@ -737,7 +766,7 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void signOut() {
-        handler.removeCallbacks(poll);
+        handler.removeCallbacks(poll); OfferMonitorService.stop(this); stopOfferSound(); alertedMission="";
         stopLocation();
         if(FirebaseAuth.getInstance().getCurrentUser()!=null)
             backend.driver("presence",Backend.args("online",false),new Backend.Callback(){
@@ -900,30 +929,24 @@ public final class MainActivity extends ComponentActivity {
         }
     }
 
-    /** Local alert for newly discovered offers; acceptance stays server-authorized. */
-    private void notifyFoundOffer(String id) {
-        if(id==null||!id.matches("(?i)[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}"))return;
-        if(Build.VERSION.SDK_INT>=33 &&
-          ContextCompat.checkSelfPermission(this,Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)return;
-        android.content.SharedPreferences prefs=getSharedPreferences("up_offer_notifications",MODE_PRIVATE);
-        if(id.equals(prefs.getString("last_id","")))return;
-        Intent open=new Intent(this,MainActivity.class);
-        open.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        PendingIntent pending=PendingIntent.getActivity(this,71,open,
-            PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
-        NotificationCompat.Builder builder=new NotificationCompat.Builder(this,UpDriverApp.CHANNEL_OFFERS)
-            .setSmallIcon(android.R.drawable.ic_dialog_map)
-            .setContentTitle("Nova corrida UP")
-            .setContentText("Uma entrega está disponível. Abra o aplicativo para aceitar.")
-            .setContentIntent(pending).setAutoCancel(true)
-            .setOnlyAlertOnce(true).setDefaults(NotificationCompat.DEFAULT_ALL)
-            .setPriority(NotificationCompat.PRIORITY_HIGH);
-        NotificationManager manager=getSystemService(NotificationManager.class);
-        if(manager!=null){
-            manager.notify(OfferPushPolicy.notificationId(id),builder.build());
-            prefs.edit().putString("last_id",id).apply();
-        }
+    private void playOfferSound() {
+        stopOfferSound();
+        try {
+            offerRingtone=android.media.RingtoneManager.getRingtone(this,
+                android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION));
+            if(offerRingtone!=null) {
+                offerRingtone.setAudioAttributes(new android.media.AudioAttributes.Builder()
+                    .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
+                offerRingtone.play();
+            }
+        } catch(Exception ignored) { }
     }
+    private void stopOfferSound() {
+        if(offerRingtone!=null) { try { offerRingtone.stop(); } catch(Exception ignored) {} }
+        offerRingtone=null;
+    }
+    private void notifyFoundOffer(String id) { OfferMonitorService.notifyOffer(this,id,visible); }
 
     private void registerPush() {
         // A separate Android Firebase app registration is mandatory for reliable FCM.
