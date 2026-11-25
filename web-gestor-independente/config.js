@@ -2,7 +2,7 @@
 // Não colocar service_role, HMAC, senhas, tokens de sessão ou segredos neste arquivo.
 // O backend ainda NÃO foi autorizado nesta conexão administrativa.
 window.UP_MANAGER_CONFIG={
-  enabled:false,
+  enabled:true,
   projectRef:"gkwmqwtktedarodvqqtn",
   projectUrl:"https://gkwmqwtktedarodvqqtn.supabase.co",
   managerApiUrl:"https://gkwmqwtktedarodvqqtn.supabase.co/functions/v1/up-manager-independent",

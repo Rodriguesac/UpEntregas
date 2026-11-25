@@ -51,6 +51,18 @@ begin
     and offer.status='ACCEPTED' then
   return query select job.id,job.status,true;return;
  end if;
+ -- The courier row is locked, so two jobs cannot be accepted concurrently.
+ -- Preserve idempotent retries above even when the courier has gone offline.
+ if courier.online is distinct from true then
+  raise exception 'courier_not_available';
+ end if;
+ if exists (
+  select 1 from public.up_jobs active
+  where active.assigned_courier_id=p_courier and active.id<>p_job
+    and active.status not in ('DELIVERED','CANCELLED','FAILED')
+ ) then
+  raise exception 'courier_busy';
+ end if;
  if job.assigned_courier_id is not null or job.status<>'OFFERED' then
   raise exception 'job_unavailable';
  end if;

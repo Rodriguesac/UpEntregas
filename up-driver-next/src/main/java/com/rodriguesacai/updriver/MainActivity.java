@@ -2,6 +2,8 @@ package com.rodriguesacai.updriver;
 
 import android.Manifest;
 import android.content.Intent;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
@@ -28,6 +30,7 @@ import com.google.android.material.switchmaterial.SwitchMaterial;
 import androidx.activity.ComponentActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.core.app.NotificationCompat;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.textfield.TextInputEditText;
 import com.google.android.material.textfield.TextInputLayout;
@@ -48,15 +51,18 @@ public final class MainActivity extends ComponentActivity {
     private final Backend backend = new Backend();
     private final Runnable poll = new Runnable() {
         @Override public void run() {
-            if (approved && online && FirebaseAuth.getInstance().getCurrentUser() != null) {
+            if (visible && approved && online && FirebaseAuth.getInstance().getCurrentUser() != null) {
                 refreshOffer(false);
-                handler.postDelayed(this, 20000);
+                handler.postDelayed(this, 15000);
             }
         }
     };
     private LinearLayout root, body;
     private String screen = "home", verification = "Verificando cadastro...", notice = "";
     private boolean approved, online, inFlight, loadingOffer;
+    private boolean visible;
+    private String alertedMission = "";
+    private android.media.Ringtone offerRingtone;
     private JSONObject mission;
     private String missionId = "";
     private JSONArray history = new JSONArray();
@@ -80,18 +86,29 @@ public final class MainActivity extends ComponentActivity {
         else { screen = "login"; render(); }
     }
 
+    @Override protected void onStart() {
+        super.onStart();
+        visible=true; OfferMonitorService.setAppVisible(true);
+    }
+
     @Override protected void onResume() {
         super.onResume();
-        if (approved && online) refreshOffer(false);
+        if (approved && online) { beginPolling(); refreshOffer(false); }
+    }
+
+    @Override protected void onStop() {
+        visible=false; OfferMonitorService.setAppVisible(false);
+        handler.removeCallbacks(poll); stopOfferSound();
+        super.onStop();
     }
 
     @Override protected void onDestroy() {
-        handler.removeCallbacks(poll);
+        handler.removeCallbacks(poll); stopOfferSound();
         super.onDestroy();
     }
 
     @Override public void onBackPressed() {
-        if ("mission".equals(screen) || "history".equals(screen) || "profile".equals(screen) || "wallet".equals(screen) || "operation".equals(screen)) {
+        if ("mission".equals(screen) || "history".equals(screen) || "profile".equals(screen) || "wallet".equals(screen) || "operation".equals(screen) || "tools".equals(screen) || "safety".equals(screen) || "preferences".equals(screen) || "performance".equals(screen)) {
             screen = "home"; render(); return;
         }
         super.onBackPressed();
@@ -127,6 +144,10 @@ public final class MainActivity extends ComponentActivity {
         else if ("profile".equals(screen)) profile();
         else if ("operation".equals(screen)) operation();
         else if ("mission".equals(screen)) mission();
+        else if ("tools".equals(screen)) toolsHub();
+        else if ("safety".equals(screen)) safety();
+        else if ("preferences".equals(screen)) preferences();
+        else if ("performance".equals(screen)) performance();
         else home();
         if (approved && !("login".equals(screen) || "signup".equals(screen)
                 || "pending".equals(screen) || "registration".equals(screen))) {
@@ -151,7 +172,8 @@ public final class MainActivity extends ComponentActivity {
         LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(0,-2,1);
         titleLp.leftMargin = dp(13);
         top.addView(titles,titleLp);
-        text(titles,"UP ENTREGADOR",19,WHITE,true);
+        text(titles,"UP Entregador",19,WHITE,true);
+        text(titles,approved?(online?"Online":"Offline"):"Sua jornada começa aqui",12,Color.rgb(199,217,244),false);
         // O login usa um cabeçalho limpo; não exibir slogans sobre GPS.
         TextView version = new TextView(this);
         version.setText("v" + BuildConfig.VERSION_NAME);
@@ -351,7 +373,7 @@ public final class MainActivity extends ComponentActivity {
     private void home() {
         LinearLayout status=card();
         status.setBackground(background(NAVY,20));
-        text(status,"SEU STATUS AGORA",12,Color.rgb(190,208,233),true);gap(status,8);
+        text(status,"CENTRAL DE TRABALHO",12,Color.rgb(190,208,233),true);gap(status,8);
         text(status,online?"Disponível para corridas":"Você está offline",24,WHITE,true);gap(status,5);
         text(status,online?"O UP pode lhe oferecer uma corrida direcionada.":"Fique online quando estiver pronto para trabalhar.",13,Color.rgb(213,224,241),false);
         int level=batteryPercent();
@@ -373,9 +395,17 @@ public final class MainActivity extends ComponentActivity {
         }
         button(missionCard,"Atualizar corridas",Color.rgb(232,239,252),true,()->refreshOffer(true));
 
-        LinearLayout guide=card();
-        text(guide,"Fluxo da entrega",17,INK,true);gap(guide,8);
-        text(guide,"Aceitar oferta → Chegar à loja → Retirar pedido → Ir ao cliente → Confirmar entrega",14,MUTED,false);
+        LinearLayout quick=card();
+        title(quick,"Seu dia no UP","Acesse suas ferramentas sem sair da operação.");
+        button(quick,"Meus ganhos e extrato",Color.rgb(231,240,255),true,()->openScreen("wallet"));
+        button(quick,"Desempenho e meta diária",Color.rgb(231,240,255),true,()->openScreen("performance"));
+        button(quick,"Ferramentas do entregador",Color.rgb(231,240,255),true,()->openScreen("tools"));
+        button(quick,"Central de segurança",Color.rgb(253,238,218),true,()->openScreen("safety"));
+        if(mission==null) {
+            LinearLayout map=card();
+            title(map,"Mapa de trabalho","A navegação das corridas está disponível na tela da missão.");
+            feature(map,"Mapa de demanda em tempo real","Em preparação — sem dados fictícios de pedidos.");
+        }
     }
 
     private void toggleAvailability() {
@@ -386,8 +416,8 @@ public final class MainActivity extends ComponentActivity {
         backend.driver("presence",Backend.args("online",newValue),new Backend.Callback(){
             @Override public void onSuccess(JSONObject data){
                 inFlight=false;online=newValue;
-                if(online){registerPush();beginPolling();refreshOffer(false);}
-                else {handler.removeCallbacks(poll);}
+                if(online){requestNotifications();beginPolling();refreshOffer(false);}
+                else {handler.removeCallbacks(poll); OfferMonitorService.stop(MainActivity.this); stopOfferSound(); alertedMission="";}
                 inform(online?"Você está disponível para receber ofertas.":"Você está offline para novas ofertas.");
             }
             @Override public void onError(String message){inFlight=false;inform(message);}
@@ -396,7 +426,10 @@ public final class MainActivity extends ComponentActivity {
 
     private void beginPolling() {
         handler.removeCallbacks(poll);
-        if(approved && online) handler.postDelayed(poll,20000);
+        if(approved && online && visible) {
+            OfferMonitorService.start(this);
+            handler.postDelayed(poll,15000);
+        }
     }
 
     private void refreshOffer(boolean userAction) {
@@ -404,9 +437,15 @@ public final class MainActivity extends ComponentActivity {
         loadingOffer=true;
         backend.driver("offer",Backend.args(),new Backend.Callback(){
             @Override public void onSuccess(JSONObject data){
-                loadingOffer=false;updateMission(data.optJSONObject("document"));
+                loadingOffer=false;
+                if(isFinishing() || isDestroyed() || inFlight)return;
+                JSONObject incoming=data.optJSONObject("document");
+                JSONObject before=mission;
+                String previousId=missionId;
+                String previousScreen=screen;
+                updateMission(incoming);
                 if(userAction)notice="Corridas atualizadas.";
-                render();
+                if(userAction || !previousScreen.equals(screen) || !previousId.equals(missionId) || !java.util.Objects.equals(before==null?null:before.toString(),mission==null?null:mission.toString())) render();
             }
             @Override public void onError(String message){
                 loadingOffer=false;
@@ -416,12 +455,19 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void updateMission(JSONObject doc) {
-        if(doc==null) { mission=null; missionId="";stopLocation();return; }
+        if(doc==null) { mission=null; missionId="";stopLocation();stopOfferSound();alertedMission="";return; }
         JSONObject data=doc.optJSONObject("data");
-        if(data==null) {mission=null;missionId="";stopLocation();return;}
+        if(data==null) {mission=null;missionId="";stopLocation();stopOfferSound();alertedMission="";return;}
         mission=data;
         missionId=doc.optString("id","").replace("supabase:","");
         String state=data.optString("upState","");
+        if(data.optBoolean("ofertaAtiva",false) && online) {
+            if(visible && !missionId.equals(alertedMission)) {
+                alertedMission=missionId; screen="mission"; notice="Nova oferta disponível";
+                playOfferSound();
+            }
+            notifyFoundOffer(missionId);
+        } else { stopOfferSound(); alertedMission=""; }
         if(!data.optBoolean("ofertaAtiva") && activeState(state)) startLocationIfAllowed();
         else stopLocation();
     }
@@ -486,6 +532,11 @@ public final class MainActivity extends ComponentActivity {
         } else text(next,"Esta corrida está encerrada. Volte ao início.",14,MUTED,false);
         if(!offered && activeState(state)) {
             button(next,"Relatar ocorrência",Color.rgb(253,238,218),true,()->reportOccurrence());
+            if("TO_CUSTOMER".equals(state)||"AT_CUSTOMER".equals(state)){
+                button(next,"Cliente não localizado",Color.rgb(253,238,218),true,()->reportOccurrence());
+                text(next,"Registre o problema para o gestor. O prazo automático e a devolução guiada ainda não estão liberados.",12,MUTED,false);
+            }
+            button(next,"Central de segurança",Color.rgb(253,238,218),true,()->openScreen("safety"));
         }
         button(next,"Atualizar status da corrida",Color.rgb(230,238,251),true,this::loadMission);
     }
@@ -509,9 +560,10 @@ public final class MainActivity extends ComponentActivity {
         backend.driver(name,payload,new Backend.Callback(){
             @Override public void onSuccess(JSONObject response) {
                 inFlight=false;
+                if("accept".equals(name)||"reject".equals(name))stopOfferSound();
                 if("reject".equals(name)){mission=null;missionId="";stopLocation();screen="home";inform("Oferta recusada.");refreshOffer(false);}
                 else if("occurrence".equals(name)) {inform("Ocorrência enviada ao gestor.");}
-                else {notice="Etapa confirmada pelo UP.";loadMission();}
+                else {if("finish".equals(name))stopLocation();notice="Etapa confirmada pelo UP.";loadMission();}
             }
             @Override public void onError(String message){inFlight=false;inform(message);}
         });
@@ -617,9 +669,14 @@ public final class MainActivity extends ComponentActivity {
         text(c,"Cadastro: aprovado pelo UP Gestor",13,GREEN,false);
         if (BuildConfig.UP_FIREBASE_ANDROID_REGISTERED)
             button(c,"Reativar notificações de ofertas",BLUE,false,this::requestNotifications);
-        else text(c,"FCM ainda não homologado para este pacote Android. A versão de prévia não promete notificações push.",13,MUTED,false);
+        else {
+            button(c,"Ativar alertas de ofertas",BLUE,false,this::requestNotifications);
+            text(c,"Ofertas verificadas automaticamente enquanto o aplicativo está aberto. Para notificações imediatas em segundo plano, o Firebase precisa ser registrado.",13,MUTED,false);
+        }
         text(c,"Para alterar dados de um cadastro aprovado, solicite revisão ao UP Gestor.",13,MUTED,false);
         button(c,"Configurar troco e maquininha",Color.rgb(231,240,255),true,()->{screen="operation";notice="";render();});
+        button(c,"Preferências de trabalho",Color.rgb(231,240,255),true,()->openScreen("preferences"));
+        button(c,"Central de ajuda e ferramentas",Color.rgb(231,240,255),true,()->openScreen("tools"));
         button(c,"Sair com segurança",Color.rgb(245,231,231),true,this::signOut);
         LinearLayout i=card();
         text(i,"Privacidade do GPS",17,INK,true);gap(i,6);
@@ -710,7 +767,7 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void signOut() {
-        handler.removeCallbacks(poll);
+        handler.removeCallbacks(poll); OfferMonitorService.stop(this); stopOfferSound(); alertedMission="";
         stopLocation();
         if(FirebaseAuth.getInstance().getCurrentUser()!=null)
             backend.driver("presence",Backend.args("online",false),new Backend.Callback(){
@@ -722,16 +779,109 @@ public final class MainActivity extends ComponentActivity {
         screen="login";notice="";walletEntries=new JSONArray();payouts=new JSONArray();render();
     }
 
+    private void openScreen(String to) {
+        screen=to;notice="";render();
+        if("wallet".equals(to))loadWallet();
+        if("history".equals(to))loadHistory();
+    }
+    private android.content.SharedPreferences workPrefs(){
+        String uid=FirebaseAuth.getInstance().getCurrentUser()==null?"guest":FirebaseAuth.getInstance().getCurrentUser().getUid();
+        return getSharedPreferences("up_work_"+uid,MODE_PRIVATE);
+    }
+    private void feature(LinearLayout c,String name,String detail){
+        gap(c,12);
+        text(c,name,16,INK,true);
+        text(c,detail,13,MUTED,false);
+        gap(c,4);
+    }
+    private void pendingFeature(LinearLayout c,String name,String detail){
+        feature(c,name,"EM PREPARAÇÃO • "+detail);
+    }
+    private void toolsHub(){
+        LinearLayout c=card();
+        title(c,"Ferramentas","Tudo para organizar seu trabalho.");
+        button(c,"Preferências e meta",BLUE,false,()->openScreen("preferences"));
+        button(c,"Segurança e emergência",Color.rgb(253,238,218),true,()->openScreen("safety"));
+        button(c,"Histórico de corridas",Color.rgb(231,240,255),true,()->openScreen("history"));
+        button(c,"Troco e maquininha",Color.rgb(231,240,255),true,()->openScreen("operation"));
+        LinearLayout more=card();
+        title(more,"Próximos recursos","Estas funções aparecem como prévia, sem simular serviços reais.");
+        pendingFeature(more,"Destino preferencial","Prioridade de ofertas na região escolhida.");
+        pendingFeature(more,"Mapa de demanda","Regiões com mais pedidos disponíveis.");
+        pendingFeature(more,"Modo chuva","Tarifas autorizadas pelo UP.");
+        pendingFeature(more,"Comunicação protegida","Chat sem exposição do telefone.");
+        pendingFeature(more,"Rotas com vários pedidos","Conferência e sequência de paradas.");
+        pendingFeature(more,"Pausa programada","Duração e retorno controlados pelo servidor.");
+        pendingFeature(more,"Avaliar estabelecimento","Registro de espera e condições de retirada.");
+        pendingFeature(more,"Contestação de penalidades","Envio de defesa e acompanhamento.");
+        LinearLayout help=card();
+        title(help,"Como funciona","Aceite ofertas apenas quando estiver disponível. Confira a retirada, siga ao cliente e confirme cada etapa. Em caso de problema, relate uma ocorrência na corrida.");
+        if(mission!=null)button(help,"Voltar à corrida",BLUE,false,()->openScreen("mission"));
+    }
+    private void preferences(){
+        LinearLayout c=card();
+        title(c,"Preferências de trabalho","Personalize sua jornada. Estas escolhas ficam neste aparelho.");
+        EditText region=input(c,"Região de destino preferida",InputType.TYPE_CLASS_TEXT);
+        region.setText(workPrefs().getString("region",""));
+        EditText target=input(c,"Meta de ganhos diária (R$)",InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        target.setText(workPrefs().getString("goal",""));
+        text(c,"A região salva ainda não altera a distribuição das ofertas.",12,MUTED,false);
+        button(c,"Salvar preferências",BLUE,false,()->{
+            String raw=target.getText().toString().trim().replace(",",".");
+            if(!raw.isEmpty())try{
+                double n=Double.parseDouble(raw);
+                if(!Double.isFinite(n)||n<0)throw new NumberFormatException();
+            }catch(Exception ex){inform("Informe uma meta válida.");return;}
+            workPrefs().edit().putString("region",region.getText().toString().trim()).putString("goal",raw).apply();
+            inform("Preferências salvas neste aparelho.");
+        });
+        LinearLayout pause=card();
+        title(pause,"Pausa","Fique offline para deixar de receber ofertas. Volte online manualmente quando estiver pronto.");
+        if(mission==null&&online)button(pause,"Pausar novas ofertas",BLUE,false,this::toggleAvailability);
+        else text(pause,mission!=null?"Conclua sua corrida antes de fazer uma pausa.":"Você está offline.",14,MUTED,false);
+        pendingFeature(pause,"Pausas de 15, 30 ou 60 minutos","Agendamento e retorno automático ainda não disponíveis.");
+    }
+    private void performance(){
+        LinearLayout c=card();
+        title(c,"Meu desempenho","Acompanhe sua evolução.");
+        String goal=workPrefs().getString("goal","");
+        String display="Não definida";
+        if(!goal.isEmpty())try{display=currency(Double.parseDouble(goal));}catch(Exception ignored){}
+        feature(c,"Meta diária",display);
+        button(c,"Definir meta",BLUE,false,()->openScreen("preferences"));
+        button(c,"Consultar ganhos reais",Color.rgb(231,240,255),true,()->openScreen("wallet"));
+        button(c,"Consultar histórico",Color.rgb(231,240,255),true,()->openScreen("history"));
+        pendingFeature(c,"Progresso diário","Total diário, pontuação, taxa de aceitação e indicadores dependem de dados do UP.");
+        pendingFeature(c,"Revisão de pontuação","Contestação e análise de penalidades.");
+    }
+    private void safety(){
+        LinearLayout c=card();
+        title(c,"Central de segurança","Se houver risco imediato, procure um local seguro e use os serviços de emergência.");
+        button(c,"Polícia • 190",Color.rgb(167,35,51),false,()->dialEmergency("190"));
+        button(c,"SAMU • 192",Color.rgb(167,35,51),false,()->dialEmergency("192"));
+        button(c,"Bombeiros • 193",Color.rgb(167,35,51),false,()->dialEmergency("193"));
+        text(c,"Os botões abrem o discador do telefone. O UP não recebe alerta automaticamente.",12,MUTED,false);
+        LinearLayout support=card();
+        title(support,"Ajuda durante a entrega","Registre uma ocorrência junto ao gestor quando estiver em uma corrida.");
+        if(mission!=null)button(support,"Abrir corrida e relatar ocorrência",BLUE,false,()->openScreen("mission"));
+        pendingFeature(support,"Compartilhamento de localização","Link temporário e contatos de confiança.");
+        pendingFeature(support,"Assistência UP","Fluxo dedicado de acidente e acionamento de suporte.");
+    }
+    private void dialEmergency(String number){
+        try{startActivity(new Intent(Intent.ACTION_DIAL,Uri.parse("tel:"+number)));}
+        catch(Exception ex){inform("Abra o telefone e disque "+number+".");}
+    }
+
     private void bottomNavigation() {
         LinearLayout bar=new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setPadding(dp(10),dp(8),dp(10),dp(7));
         bar.setBackgroundColor(WHITE);
         addTab(bar,"Início","home");
-        addTab(bar,"Corrida","mission");
-        addTab(bar,"Histórico","history");
+        addTab(bar,"Corridas","history");
         addTab(bar,"Ganhos","wallet");
-        addTab(bar,"Conta","profile");
+        addTab(bar,"Desempenho","performance");
+        addTab(bar,"Perfil","profile");
         root.addView(bar,new LinearLayout.LayoutParams(-1,-2));
     }
     private void addTab(LinearLayout parent,String label,String to) {
@@ -780,6 +930,25 @@ public final class MainActivity extends ComponentActivity {
         }
     }
 
+    private void playOfferSound() {
+        stopOfferSound();
+        try {
+            offerRingtone=android.media.RingtoneManager.getRingtone(this,
+                android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION));
+            if(offerRingtone!=null) {
+                offerRingtone.setAudioAttributes(new android.media.AudioAttributes.Builder()
+                    .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
+                offerRingtone.play();
+            }
+        } catch(Exception ignored) { }
+    }
+    private void stopOfferSound() {
+        if(offerRingtone!=null) { try { offerRingtone.stop(); } catch(Exception ignored) {} }
+        offerRingtone=null;
+    }
+    private void notifyFoundOffer(String id) { OfferMonitorService.notifyOffer(this,id,visible); }
+
     private void registerPush() {
         // A separate Android Firebase app registration is mandatory for reliable FCM.
         if (!BuildConfig.UP_FIREBASE_ANDROID_REGISTERED) return;
@@ -797,9 +966,6 @@ public final class MainActivity extends ComponentActivity {
         });
     }
     private void requestNotifications() {
-        if (!BuildConfig.UP_FIREBASE_ANDROID_REGISTERED) {
-            inform("O Android deste novo UP ainda precisa ser registrado no Firebase.");return;
-        }
         if(Build.VERSION.SDK_INT>=33 &&
           ContextCompat.checkSelfPermission(this,Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this,new String[]{Manifest.permission.POST_NOTIFICATIONS},NOTIFICATION_PERMISSION);
@@ -814,6 +980,9 @@ public final class MainActivity extends ComponentActivity {
         }
         Intent intent=new Intent(this,LocationService.class);
         intent.putExtra("mission_id",missionId);
+        intent.putExtra("mission_state",mission.optString("upState",""));
+        intent.putExtra("customer_lat",mission.optDouble("clienteLat",Double.NaN));
+        intent.putExtra("customer_lng",mission.optDouble("clienteLng",Double.NaN));
         try{ContextCompat.startForegroundService(this,intent);}
         catch(Exception ex){notice="GPS indisponível neste momento. Verifique a permissão.";render();}
     }

@@ -13,6 +13,9 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.io.IOException;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /** Authenticated, single-purpose client for UP's independent server only. */
 public final class Backend {
@@ -22,6 +25,7 @@ public final class Backend {
     }
     private static final String PROJECT_HOST = "gkwmqwtktedarodvqqtn.supabase.co";
     private static final ExecutorService IO = Executors.newFixedThreadPool(3);
+    private static final ScheduledExecutorService RETRY = Executors.newSingleThreadScheduledExecutor();
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
 
     public void driver(String action, JSONObject payload, Callback cb) {
@@ -58,43 +62,73 @@ public final class Backend {
             error(cb, "Faça login para continuar.");
             return;
         }
-        user.getIdToken(false)
-            .addOnSuccessListener(result -> IO.execute(() -> {
-                HttpURLConnection con = null;
-                try {
-                    JSONObject body = payload == null ? new JSONObject()
-                        : new JSONObject(payload.toString());
-                    body.put("action", action);
-                    byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
-                    if (bytes.length > 8192) throw new IllegalStateException("Dados muito grandes.");
-                    con = (HttpURLConnection)new URL(endpoint).openConnection();
-                    con.setRequestMethod("POST");
-                    con.setConnectTimeout(9000);
-                    con.setReadTimeout(12000);
-                    con.setDoOutput(true);
-                    con.setRequestProperty("Content-Type", "application/json");
-                    con.setRequestProperty("Accept", "application/json");
-                    con.setRequestProperty("apikey", BuildConfig.UP_PUBLISHABLE_KEY);
-                    con.setRequestProperty("Authorization", "Bearer " + result.getToken());
-                    con.setFixedLengthStreamingMode(bytes.length);
-                    try(OutputStream os = con.getOutputStream()) { os.write(bytes); }
-                    int code = con.getResponseCode();
-                    InputStream in = code >= 200 && code < 300
-                        ? con.getInputStream() : con.getErrorStream();
-                    String raw = read(in);
-                    JSONObject response = raw.isEmpty() ? new JSONObject() : new JSONObject(raw);
-                    if (code < 200 || code >= 300 || !response.optBoolean("ok", false)) {
-                        error(cb, explain(response.optString("error", "Erro de conexão.")));
-                        return;
-                    }
-                    MAIN.post(() -> cb.onSuccess(response));
-                } catch (Exception ex) {
-                    error(cb, "Não foi possível comunicar com o UP. Confira a internet e tente novamente.");
-                } finally {
-                    if(con != null) con.disconnect();
+        JSONObject body;
+        try {
+            body = payload == null ? new JSONObject() : new JSONObject(payload.toString());
+            body.put("action", action);
+        } catch (Exception ex) { error(cb, "Dados inválidos."); return; }
+        byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
+        if(bytes.length > 8192) { error(cb, "Dados muito grandes."); return; }
+        attempt(endpoint, action, bytes, user.getUid(), cb, 0, false);
+    }
+
+    private static boolean sameUser(String uid) {
+        FirebaseUser current = FirebaseAuth.getInstance().getCurrentUser();
+        return current != null && uid.equals(current.getUid());
+    }
+
+    private void attempt(String endpoint, String action, byte[] bytes, String uid,
+                         Callback cb, int attempt, boolean refreshed) {
+        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+        if(user == null || !uid.equals(user.getUid())) { error(cb, "Sessão encerrada. Entre novamente."); return; }
+        user.getIdToken(refreshed).addOnSuccessListener(result -> IO.execute(() -> {
+            HttpURLConnection con = null;
+            try {
+                if(!sameUser(uid)) { error(cb, "Sessão encerrada. Entre novamente."); return; }
+                con = (HttpURLConnection)new URL(endpoint).openConnection();
+                con.setInstanceFollowRedirects(false);
+                con.setRequestMethod("POST");
+                con.setConnectTimeout(9000);
+                con.setReadTimeout(12000);
+                con.setDoOutput(true);
+                con.setRequestProperty("Content-Type", "application/json");
+                con.setRequestProperty("Accept", "application/json");
+                con.setRequestProperty("apikey", BuildConfig.UP_PUBLISHABLE_KEY);
+                con.setRequestProperty("Authorization", "Bearer " + result.getToken());
+                con.setFixedLengthStreamingMode(bytes.length);
+                try(OutputStream os = con.getOutputStream()) { os.write(bytes); }
+                int code = con.getResponseCode();
+                if(code == 401 && !refreshed) {
+                    attempt(endpoint, action, bytes, uid, cb, attempt, true);
+                    return;
                 }
-            }))
-            .addOnFailureListener(ex -> error(cb, "Sessão expirada. Entre novamente."));
+                if(RequestPolicy.mayRetry(action, code, attempt)) {
+                    retry(endpoint,action,bytes,uid,cb,attempt,refreshed,con.getHeaderField("Retry-After"));
+                    return;
+                }
+                InputStream in = code >= 200 && code < 300 ? con.getInputStream() : con.getErrorStream();
+                String raw = read(in);
+                JSONObject response = raw.isEmpty() ? new JSONObject() : new JSONObject(raw);
+                if(code < 200 || code >= 300 || !response.optBoolean("ok",false)) {
+                    error(cb,explain(response.optString("error","Erro de conexão."))); return;
+                }
+                MAIN.post(() -> {
+                    if(sameUser(uid)) cb.onSuccess(response);
+                    else cb.onError("Sessão encerrada. Entre novamente.");
+                });
+            } catch(IOException ex) {
+                if(RequestPolicy.mayRetry(action,0,attempt)) retry(endpoint,action,bytes,uid,cb,attempt,refreshed,null);
+                else error(cb,"Sem conexão com o UP. Atualize a corrida antes de repetir a ação.");
+            } catch(Exception ex) {
+                error(cb,"Não foi possível ler a resposta do UP. Atualize a corrida.");
+            } finally { if(con != null) con.disconnect(); }
+        })).addOnFailureListener(ex -> error(cb,"Sessão expirada. Entre novamente."));
+    }
+
+    private void retry(String endpoint,String action,byte[] bytes,String uid,Callback cb,
+                       int attempt,boolean refreshed,String retryAfter) {
+        RETRY.schedule(() -> attempt(endpoint,action,bytes,uid,cb,attempt+1,refreshed),
+            RequestPolicy.delayMillis(attempt,retryAfter),TimeUnit.MILLISECONDS);
     }
 
     private static String read(InputStream stream) throws Exception {
@@ -102,7 +136,7 @@ public final class Backend {
         try(InputStream in = stream; ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             byte[] b = new byte[4096]; int n;
             while((n = in.read(b)) != -1) {
-                if(out.size() + n > 16384) throw new IllegalStateException("Resposta muito grande.");
+                if(out.size() + n > RequestPolicy.MAX_RESPONSE_BYTES) throw new IllegalStateException("Resposta muito grande.");
                 out.write(b,0,n);
             }
             return out.toString(StandardCharsets.UTF_8.name());
@@ -120,6 +154,8 @@ public final class Backend {
             case "driver_not_approved": case "courier_not_approved": return "O gestor precisa aprovar seu cadastro.";
             case "firebase_token_required": case "invalid_firebase_token": return "Sessão expirada. Entre novamente.";
             case "offer_not_found": case "offer_expired_or_used": return "Esta oferta expirou ou já foi utilizada.";
+            case "courier_busy": return "Conclua sua corrida atual antes de aceitar outra.";
+            case "courier_not_available": return "Fique disponível antes de aceitar uma corrida.";
             case "job_unavailable": return "A corrida já não está disponível.";
             case "invalid_driver_transition": return "Esta etapa não pode ser confirmada agora. Atualize a corrida.";
             case "battery_below_minimum": return "Bateria abaixo de 15%. Recarregue antes de aceitar novas corridas.";

@@ -33,11 +33,11 @@ const maxPayload=12288;
 Deno.serve(async req=>{
  const origin=txt(req.headers.get("origin"));
  const hosts=(Deno.env.get("UP_MANAGER_ALLOWED_ORIGINS")||"").split(",").map(x=>x.trim()).filter(Boolean);
+ if(!hosts.includes("https://appassets.androidplatform.net"))hosts.push("https://appassets.androidplatform.net");
  if(!hosts.length||!origin||!hosts.includes(origin))return fail(origin,403,"origin_not_allowed");
  if(req.method==="OPTIONS")return new Response(null,{status:204,headers:cors(origin)});
  if(req.method!=="POST")return fail(origin,405,"method_not_allowed");
- if(Deno.env.get("UP_INDEPENDENT_MANAGER_ENABLED")!=="true")
-  return fail(origin,503,"independent_manager_disabled");
+ 
  const url=Deno.env.get("SUPABASE_URL"),key=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
  if(!url||!key)return fail(origin,503,"service_not_configured");
  const token=txt(req.headers.get("authorization")).replace(/^Bearer\s+/i,"");
@@ -60,6 +60,11 @@ Deno.serve(async req=>{
   if(!actor.data?.active||!readingRoles.includes(actor.data.role))
    return fail(origin,403,"manager_not_authorized");
   const role=txt(actor.data.role);
+  if(Deno.env.get("UP_INDEPENDENT_MANAGER_ENABLED")!=="true"){
+   const gate=await db.from("up_settings").select("value").eq("id","runtime_manager").maybeSingle();
+   if(gate.error)throw gate.error;
+   if(gate.data?.value?.enabled!==true)return fail(origin,503,"independent_manager_disabled");
+  }
   const raw=await req.text();
   if(new TextEncoder().encode(raw).length>maxPayload)return fail(origin,413,"payload_too_large");
   let body:any;try{body=JSON.parse(raw)}catch{return fail(origin,400,"invalid_json")}
@@ -77,7 +82,7 @@ Deno.serve(async req=>{
     {id:"status_endpoint",label:"Destino de retorno à loja",ready:txt(Deno.env.get("UP_STATUS_STORE_ENDPOINT"))==="https://fdqqwdplprzpqufpgdrm.supabase.co/functions/v1/up-status-receiver"},
     {id:"status_worker",label:"Autorização do retorno",ready:configured("UP_STATUS_WORKER_TOKEN",32)},
     {id:"manager_origin",label:"Domínio permitido do painel",ready:txt(Deno.env.get("UP_MANAGER_ALLOWED_ORIGINS")).split(",").some(s=>s.trim().startsWith("https://"))},
-    {id:"firebase",label:"Identidade Firebase",ready:txt(Deno.env.get("UP_FIREBASE_PROJECT_ID"))==="rodrigues-d6566"},
+    {id:"firebase",label:"Firebase próprio do UP",ready:configured("UP_FIREBASE_PROJECT_ID",5)&&txt(Deno.env.get("UP_FIREBASE_PROJECT_ID"))!=="rodrigues-d6566"},
     {id:"customer_origin",label:"Domínio permitido do cliente",ready:txt(Deno.env.get("UP_CUSTOMER_ALLOWED_ORIGINS")).split(",").some(s=>s.trim()==="https://rodriguesacaiecia.web.app")},
     {id:"fcm",label:"Serviço de notificações",ready:configured("UP_FCM_SERVICE_ACCOUNT_JSON",50)&&configured("UP_PUSH_WORKER_TOKEN",32)}
    ];
@@ -153,6 +158,48 @@ Deno.serve(async req=>{
      pending:apps.filter(x=>["PENDING","NEEDS_CORRECTION"].includes(x.state)).length,
      payout_pending:paid.filter(x=>x.status==="REQUESTED").length},
     sampled:all.length===1000});
+  }
+  // Authenticated UP dispatchers only; no keys or internal IDs from the browser are trusted.
+  if(action==="merchant_locations"){
+   authorizeRole(role,operatingRoles);
+   const r=await db.from("up_merchants")
+    .select("id,display_name,state,up_merchant_locations(id,label,city,state,is_default)")
+    .eq("state","ACTIVE").order("display_name",{ascending:true}).limit(100);
+   if(r.error)throw r.error;
+   return reply(origin,{ok:true,merchants:(r.data||[]).map((m:any)=>({
+    id:m.id,display_name:m.display_name,
+    locations:(m.up_merchant_locations||[]).filter((loc:any)=>loc.state==="ACTIVE")
+     .map((loc:any)=>({id:loc.id,label:loc.label,city:loc.city,is_default:loc.is_default}))
+   }))});
+  }
+  if(action==="create_manual_job"){
+   authorizeRole(role,operatingRoles);
+   const merchantId=id(body.merchant_id),locationId=id(body.location_id);
+   const requestId=id(body.request_id),code=txt(body.order_code);
+   const src=obj(body.dropoff);
+   const destination={
+    street:txt(src.street).slice(0,180),number:txt(src.number).slice(0,20),
+    neighborhood:txt(src.neighborhood).slice(0,120),city:txt(src.city).slice(0,120),
+    state:txt(src.state).slice(0,2),complement:txt(src.complement).slice(0,150),
+    reference:txt(src.reference).slice(0,150)
+   };
+   const name=txt(body.recipient_name).slice(0,150);
+   const phone=txt(body.recipient_phone).replace(/\D/g,"").slice(0,15);
+   if(!/^\d{3,32}$/.test(code)||name.length<2||phone.length<10||
+      destination.street.length<3||destination.city.length<2)
+    return fail(origin,422,"invalid_manual_request");
+   const normalized={merchantId,locationId,requestId,code,destination,name,phone};
+   const rawHash=await crypto.subtle.digest("SHA-256",
+    new TextEncoder().encode(JSON.stringify(normalized)));
+   const hash=Array.from(new Uint8Array(rawHash),x=>x.toString(16).padStart(2,"0")).join("");
+   const r=await db.rpc("up_manager_manual_job",{
+    p_merchant:merchantId,p_location:locationId,p_request_id:requestId,
+    p_code:code,p_dropoff:destination,p_name:name,p_phone:phone,
+    p_actor:uid,p_fingerprint:hash
+   });
+   if(r.error)throw r.error;
+   return reply(origin,{ok:true,job:r.data?.[0]||null,
+    billing_status:"NOT_QUOTED",note:"Nenhuma cobrança ou repasse foi gerado."});
   }
   if(action==="jobs_list"){
    const r=await db.from("up_jobs")
@@ -302,6 +349,8 @@ Deno.serve(async req=>{
    "invalid_review","incomplete_application","approved_courier_missing",
    "suspend_existing_driver_separately","courier_not_found","driver_has_active_job",
    "job_unavailable","job_already_offered","courier_not_available","courier_busy",
+   "invalid_manual_request","invalid_delivery_address","manual_request_conflict",
+   "merchant_not_active","pickup_not_active",
    "insufficient_wallet_balance","invalid_payout","payout_not_found",
    "payout_already_paid_different_reference","payout_cannot_be_paid"
   ];

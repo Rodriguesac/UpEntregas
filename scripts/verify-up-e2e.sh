@@ -16,7 +16,10 @@ psql -X -v ON_ERROR_STOP=1 -d up_e2e_test -f supabase/up-independent-schema.sql 
 psql -X -v ON_ERROR_STOP=1 -d up_e2e_test -f supabase/up-driver-operations.sql >/dev/null
 psql -X -v ON_ERROR_STOP=1 -d up_e2e_test -f supabase/up-manager-independent.sql >/dev/null
 psql -X -v ON_ERROR_STOP=1 -d up_e2e_test -f supabase/up-offer-notifications.sql >/dev/null
+psql -X -v ON_ERROR_STOP=1 -d up_e2e_test -f supabase/up-multimerchant-foundation.sql >/dev/null
+psql -X -v ON_ERROR_STOP=1 -d up_e2e_test -f supabase/up-manual-dispatch.sql >/dev/null
 psql -X -v ON_ERROR_STOP=1 -d up_e2e_test -f scripts/verify-up-e2e.sql
+psql -X -v ON_ERROR_STOP=1 -d up_e2e_test -f scripts/verify-up-manual-dispatch.sql
 psql -X -v ON_ERROR_STOP=1 -d up_e2e_test -f supabase/up-gps-retention.sql >/dev/null
 psql -X -v ON_ERROR_STOP=1 -d up_e2e_test -f scripts/verify-up-gps-retention.sql
 test "$(psql -X -v ON_ERROR_STOP=1 -d up_e2e_test -Atqc 'select count(*) from public.up_jobs')" = "0"

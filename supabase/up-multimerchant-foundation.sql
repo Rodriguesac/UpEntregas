@@ -119,6 +119,11 @@ end $$;
 
 create index if not exists up_jobs_merchant_status_idx
   on public.up_jobs(merchant_id,status,updated_at desc);
+-- Required for efficient foreign-key checks when a partner edits pickup locations.
+create index if not exists up_jobs_merchant_location_fk_idx
+  on public.up_jobs(merchant_id,merchant_location_id);
+create index if not exists up_merchant_integrations_merchant_idx
+  on public.up_merchant_integrations(merchant_id);
 create unique index if not exists up_jobs_merchant_external_order_idx
   on public.up_jobs(merchant_id,merchant_order_id);
 -- A restrição UNIQUE anterior de merchant_order_id é mantida para não quebrar

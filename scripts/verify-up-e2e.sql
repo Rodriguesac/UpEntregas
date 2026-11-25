@@ -9,6 +9,10 @@ DECLARE
  v_courier uuid;
  v_other uuid;
  v_offer uuid;
+ v_second_job uuid;
+ v_third_job uuid;
+ v_second_offer uuid;
+ v_third_offer uuid;
  v_status text;
  v_created boolean;
  v_repeated boolean;
@@ -46,6 +50,17 @@ BEGIN
  FROM public.up_manager_create_offer(v_job,v_courier,'firebase-test-owner',3);
  IF v_offer IS NULL THEN RAISE EXCEPTION 'e2e_offer_missing';END IF;
 
+ -- A previously offered courier must not be able to accept while offline.
+ UPDATE public.up_couriers SET online=false WHERE id=v_courier;
+ v_denied:=false;
+ BEGIN
+  PERFORM public.up_driver_accept(v_job,v_courier,v_offer);
+ EXCEPTION WHEN OTHERS THEN
+  IF SQLERRM='courier_not_available' THEN v_denied:=true;ELSE RAISE;END IF;
+ END;
+ IF NOT v_denied THEN RAISE EXCEPTION 'e2e_offline_courier_accepted';END IF;
+ UPDATE public.up_couriers SET online=true WHERE id=v_courier;
+
  v_denied:=false;
  BEGIN
   PERFORM public.up_driver_accept(v_job,v_other,v_offer);
@@ -57,6 +72,10 @@ BEGIN
  SELECT job_status INTO v_status
  FROM public.up_driver_accept(v_job,v_courier,v_offer);
  IF v_status<>'ACCEPTED' THEN RAISE EXCEPTION 'e2e_accept_failed';END IF;
+ SELECT already_applied INTO v_repeated
+ FROM public.up_driver_accept(v_job,v_courier,v_offer);
+ IF v_repeated IS DISTINCT FROM true
+ THEN RAISE EXCEPTION 'e2e_accept_idempotency_failed';END IF;
  SELECT job_status INTO v_status
  FROM public.up_driver_advance(v_job,v_courier,'TO_STORE');
  IF v_status<>'TO_STORE' THEN RAISE EXCEPTION 'e2e_to_store_failed';END IF;
@@ -94,6 +113,34 @@ BEGIN
   has_table_privilege('authenticated','public.up_tracking_points','SELECT') OR
   has_function_privilege('authenticated','public.up_driver_location(uuid,uuid,numeric,numeric,numeric)','EXECUTE')
  THEN RAISE EXCEPTION 'e2e_gps_permissions_failed';END IF;
- RAISE NOTICE 'UP E2E internal assertions passed';
+ -- Two valid offers can exist for different jobs, but only one may be accepted
+ -- by the same courier while its previous ride remains active.
+ SELECT job_id INTO v_second_job
+ FROM public.up_receive_handoff(gen_random_uuid(),'900002',
+   '{"street":"Store 2"}'::jsonb,'{"street":"Customer 2"}'::jsonb,
+   'Customer 2','67000000000',0,gen_random_uuid(),repeat('b',64));
+ SELECT job_id INTO v_third_job
+ FROM public.up_receive_handoff(gen_random_uuid(),'900003',
+   '{"street":"Store 3"}'::jsonb,'{"street":"Customer 3"}'::jsonb,
+   'Customer 3','67000000000',0,gen_random_uuid(),repeat('c',64));
+ SELECT offer_id INTO v_second_offer
+ FROM public.up_manager_create_offer(v_second_job,v_courier,'firebase-test-owner',3);
+ SELECT offer_id INTO v_third_offer
+ FROM public.up_manager_create_offer(v_third_job,v_courier,'firebase-test-owner',3);
+ SELECT job_status INTO v_status
+ FROM public.up_driver_accept(v_second_job,v_courier,v_second_offer);
+ IF v_status <> 'ACCEPTED' THEN RAISE EXCEPTION 'e2e_second_accept_failed';END IF;
+ v_denied:=false;
+ BEGIN
+  PERFORM public.up_driver_accept(v_third_job,v_courier,v_third_offer);
+ EXCEPTION WHEN OTHERS THEN
+  IF SQLERRM='courier_busy' THEN v_denied:=true; ELSE RAISE; END IF;
+ END;
+ IF NOT v_denied THEN RAISE EXCEPTION 'e2e_courier_double_booking';END IF;
+ IF EXISTS(SELECT 1 FROM public.up_jobs
+           WHERE id=v_third_job AND assigned_courier_id IS NOT NULL) THEN
+  RAISE EXCEPTION 'e2e_double_book_corrupted_assignment';
+ END IF;
+ RAISE NOTICE 'UP E2E internal assertions passed (offline, idempotency, double booking)';
 END $e2e$;
 ROLLBACK;

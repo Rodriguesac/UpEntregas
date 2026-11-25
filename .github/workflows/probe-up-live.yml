@@ -1,0 +1,32 @@
+name: Validar APIs reais do UP sem criar pedidos
+on:
+  push:
+    branches: [exec/operational-reliability-20261110]
+    paths: ['.github/workflows/probe-up-live.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verificar acesso, configuração e exigência de Firebase JWT
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const base = 'https://gkwmqwtktedarodvqqtn.supabase.co/functions/v1/';
+          const key = 'sb_publishable_-G8dzZ51cG9ZTdVviPAQdQ_9oSnwCyG';
+          for (const name of ['driver-api-independent','driver-registration-independent','up-manager-independent']) {
+            const headers = {'content-type':'application/json','apikey':key};
+            if (name==='up-manager-independent') headers.origin='https://appassets.androidplatform.net';
+            const abort=AbortSignal.timeout(25000);
+            const res=await fetch(base+name,{method:'POST',headers,body:'{"action":"session"}',signal:abort});
+            const body=await res.json();
+            console.log(name, res.status, body.error);
+            if(res.status!==401 || body.error!=='firebase_token_required') {
+              throw new Error(name+' is not configured or does not enforce Firebase JWT');
+            }
+          }
+          console.log('PASS: 3 APIs live and requiring verified Firebase JWT');
+          NODE
