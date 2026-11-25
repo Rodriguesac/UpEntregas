@@ -417,7 +417,7 @@ public final class MainActivity extends ComponentActivity {
             @Override public void onSuccess(JSONObject data){
                 inFlight=false;online=newValue;
                 if(online){requestNotifications();beginPolling();refreshOffer(false);}
-                else {handler.removeCallbacks(poll); OfferMonitorService.stop(this); stopOfferSound(); alertedMission="";}
+                else {handler.removeCallbacks(poll); OfferMonitorService.stop(MainActivity.this); stopOfferSound(); alertedMission="";}
                 inform(online?"Você está disponível para receber ofertas.":"Você está offline para novas ofertas.");
             }
             @Override public void onError(String message){inFlight=false;inform(message);}
