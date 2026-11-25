@@ -38,21 +38,21 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Compilar motorista e gestor sem tocar no app da loja
-        run: gradle :up-driver-next:assembleDebug :gestor-independente:assembleDebug --stacktrace
+      - name: Compilar somente Entregador com Firebase registrado
+        run: gradle :up-driver-next:assembleDebug :up-driver-next:lintDebug --stacktrace
       - name: Validar APKs e pacote independente
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist
           driver="up-driver-next/build/outputs/apk/debug/up-driver-next-debug.apk"
-          manager="gestor-independente/build/outputs/apk/debug/gestor-independente-debug.apk"
+
           test -s "$driver"
-          test -s "$manager"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$driver" | grep -Fq "package: name='com.rodriguesacai.updriver.independente' versionCode='104'"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$manager" | grep -Fq "package: name='com.rodriguesacai.upgestor.independente' versionCode='101'"
-          cp "$driver" dist/UP-Entregador-1.0.4-Beta.apk
-          cp "$manager" dist/UP-Gestor-1.0.1-Beta.apk
+
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$driver" | grep -Fq "package: name='com.rodriguesacai.updriver.independente' versionCode='107'"
+
+          cp "$driver" dist/UP-Entregador-1.0.7-Beta.apk
+
           sha256sum dist/*.apk
       - uses: actions/upload-artifact@v4
         with:
@@ -78,14 +78,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tag="up-entregas-android-v2026.11.10-beta"
+          tag="up-entregador-v1.0.7-beta"
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" dist/*.apk --clobber
           else
             gh release create "$tag" dist/*.apk \
               --target "${GITHUB_SHA}" \
-              --title "UP Entregas Android - beta 10/11/2026" \
-              --notes "Entregador 1.0.4-beta e Gestor 1.0.1-beta no Supabase exclusivo UP. Login obrigatório; cadastro e ofertas exigem permissão. Atualização de ofertas no app aberto; notificações push com o app em segundo plano dependem do cadastro Firebase exclusivo. APKs de homologação assinados como debug, não publicados na Play Store." \
+              --title "UP Entregador 1.0.7 Beta" \
+              --notes "Entregador 1.0.7-beta com cadastro Android Firebase dedicado. Notificações e entrega ponta a ponta ainda exigem teste real." \
               --prerelease
           fi
           gh release view "$tag" --json url --jq .url
