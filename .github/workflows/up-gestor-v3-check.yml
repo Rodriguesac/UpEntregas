@@ -1,0 +1,30 @@
+name: UP Gestor operational quality checks
+on:
+  push:
+    branches: [feat/up-gestor-operations-v3]
+    paths:
+      - '.github/workflows/up-gestor-v3-check.yml'
+      - 'web-gestor-independente/**'
+      - 'supabase/functions/up-manager-independent/**'
+      - 'scripts/test-up-manager-operations-v3.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: JavaScript syntax
+        run: |
+          node --check web-gestor-independente/app.js
+          node --check web-gestor-independente/map.js
+          node --check web-gestor-independente/operations-ui.js
+      - name: API, authorization and UI tests
+        run: |
+          node scripts/test-up-manager-independent.mjs
+          node scripts/test-up-manager-operations-v3.mjs
