@@ -429,6 +429,87 @@ Deno.serve(async req=>{
    if(r.error)throw r.error;
    return reply(origin,{ok:true,updated:r.data===true});
   }
+
+  // Leitura autenticada. Não executa cobrança nem gera pedidos.
+  if(action==="pricing_policy_get"){
+   authorizeRole(role,operatingRoles);
+   const [tariff,policy]=await Promise.all([
+    db.from("up_tariff_settings").select("minimum_amount,per_km,enabled,updated_at,grouping_enabled,wait_block_minutes,wait_block_amount").eq("id",1).maybeSingle(),
+    db.from("up_settings").select("value,updated_at").eq("id","waiting_policy").maybeSingle()
+   ]);
+   if(tariff.error||policy.error)throw Error("pricing_policy_unavailable");
+   return reply(origin,{ok:true,tariff:tariff.data||null,
+    waiting:policy.data?.value||{block_minutes:5,block_amount:1,enabled:false},
+    waiting_live:policy.data?.value?.enabled===true&&policy.data?.value?.simulation_only===false,
+    grouping_live:tariff.data?.grouping_enabled===true});
+  }
+  // Parametrização de espera para simulação, isolada do financeiro até implementação transacional.
+  if(action==="waiting_policy_save"){
+   authorizeRole(role,privateRoles);
+   const minutes=body.block_minutes,amount=body.block_amount;
+   const activate=body.enabled===true;
+   if(body.enabled!=null&&typeof body.enabled!=="boolean")return fail(origin,422,"invalid_waiting_policy");
+   if(!Number.isInteger(minutes)||minutes<1||minutes>60||
+    typeof amount!=="number"||!Number.isFinite(amount)||amount<0||amount>100||
+    Math.abs(Math.round(amount*100)-amount*100)>0.000001)
+    return fail(origin,422,"invalid_waiting_policy");
+   const value={block_minutes:minutes,block_amount:amount,enabled:activate,simulation_only:!activate,
+    updated_by:uid};
+   const saved=await db.from("up_settings").upsert({id:"waiting_policy",value,updated_at:new Date().toISOString()},{onConflict:"id"});
+   if(saved.error)throw saved.error;
+   const audit=await db.from("up_audit_log").insert({actor:uid,action:"waiting_policy_configured",
+    entity_type:"settings",entity_id:"waiting_policy",metadata:value});
+   if(audit.error)throw audit.error;
+   return reply(origin,{ok:true,waiting:value,waiting_live:activate});
+  }
+  if(action==="grouping_save"){
+   authorizeRole(role,privateRoles);
+   if(typeof body.enabled!=="boolean")return fail(origin,422,"invalid_grouping_policy");
+   const updated=await db.from("up_tariff_settings")
+    .update({grouping_enabled:body.enabled,updated_at:new Date().toISOString()})
+    .eq("id",1).select("grouping_enabled").maybeSingle();
+   if(updated.error)throw updated.error;
+   if(!updated.data)return fail(origin,409,"tariff_not_configured");
+   const audit=await db.from("up_audit_log").insert({
+    actor:uid,action:"grouping_policy_changed",entity_type:"tariff",entity_id:"1",
+    metadata:{grouping_enabled:body.enabled}
+   });
+   if(audit.error)throw audit.error;
+   return reply(origin,{ok:true,grouping_enabled:body.enabled});
+  }
+  // Roteamento sob demanda, sem GPS de terceiros e sem repetir consultas automaticamente.
+  // O servidor OSRM público é usado somente para simular; para tarifação em produção,
+  // configurar infraestrutura de rotas com capacidade e SLA próprios.
+  if(action==="route_preview"){
+   authorizeRole(role,operatingRoles);
+   const pts=body.points;
+   if(!Array.isArray(pts)||pts.length<2||pts.length>4||
+      pts.some((p:any)=>!p||typeof p.lat!=="number"||typeof p.lng!=="number"||
+      !Number.isFinite(p.lat)||!Number.isFinite(p.lng)||
+      Math.abs(p.lat)>85||Math.abs(p.lng)>180))
+      return fail(origin,422,"invalid_route_points");
+   const coords=pts.map((p:any)=>p.lng.toFixed(6)+","+p.lat.toFixed(6)).join(";");
+   const url="https://router.project-osrm.org/route/v1/driving/"+coords+
+      "?overview=full&geometries=geojson&steps=false";
+   const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),7500);
+   try{
+    const response=await fetch(url,{signal:ctrl.signal,headers:{"accept":"application/json"}});
+    if(!response.ok)return fail(origin,503,"route_provider_unavailable");
+    const data=await response.json();
+    const route=data?.routes?.[0],meters=Number(route?.distance),secs=Number(route?.duration);
+    if(!route||!Number.isFinite(meters)||meters<=0||!Number.isFinite(secs)||secs<=0)
+     return fail(origin,422,"route_not_found");
+    const line=Array.isArray(route.geometry?.coordinates)?route.geometry.coordinates:[];
+    const step=Math.max(1,Math.ceil(line.length/550));
+    const simplified=line.filter((_:unknown,i:number)=>i%step===0);
+    if(line.length&&simplified[simplified.length-1]!==line[line.length-1])
+     simplified.push(line[line.length-1]);
+    return reply(origin,{ok:true,distance_km:Math.round(meters/10)/100,
+      duration_minutes:Math.round(secs/6)/10,route_coordinates:simplified,
+      source:"OSRM_DEMO",estimated:true,chargeable:false});
+   }catch{return fail(origin,503,"route_provider_unavailable")}
+   finally{clearTimeout(timer)}
+  }
   if(action==="tariff_get"){
    authorizeRole(role,operatingRoles);
    const r=await db.from("up_tariff_settings").select("minimum_amount,per_km,enabled,updated_at").eq("id",1).maybeSingle();

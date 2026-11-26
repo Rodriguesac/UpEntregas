@@ -78,6 +78,7 @@ jobs:
           psql "$UP_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/up-independent-schema.sql
           psql "$UP_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/up-driver-operations.sql
           psql "$UP_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/up-manager-independent.sql
+          psql "$UP_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/up-grouping-wait.sql
           psql "$UP_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/up-offer-notifications.sql
           psql "$UP_DATABASE_URL" -X -Atqc "select count(*) from information_schema.tables where table_schema='public' and table_name in ('up_couriers','up_jobs','up_tracking_points','up_manager_users','up_offer_notifications');" | grep -qx 5
           echo "Estrutura exclusiva do UP instalada."
