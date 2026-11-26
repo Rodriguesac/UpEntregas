@@ -232,3 +232,13 @@ display:flex;gap:11px;align-items:flex-start;justify-content:space-between}
 .up-vector-pin:hover,.up-vector-pin:focus-visible{outline:3px solid #b5f283;outline-offset:2px}
 .up-map-canvas .maplibregl-control-container{font-size:11px}
 .up-map-canvas .maplibregl-ctrl-attrib{background:#fffffff0}
+
+/* UP route calculation settings */
+.up-priced-map{height:clamp(340px,57vh,580px);background:#e5eee8;border:1px solid #d2e5d8;border-radius:16px;overflow:hidden}
+.up-priced-note,.rate-result{background:#edf8f2;color:#105338;border-radius:14px;border:1px solid #cfe8d9;padding:14px;margin-top:13px;font-size:13px;line-height:1.6}
+.up-priced-check{display:flex;align-items:center;gap:10px;margin:14px 0}
+.up-priced-check input{width:19px;height:19px}
+.rate-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.rate-label{display:block;font-size:12px;color:#416854;font-weight:750}
+.rate-label .field{margin-top:6px}
+@media(max-width:670px){.rate-grid{grid-template-columns:1fr}.up-priced-map{height:380px}}

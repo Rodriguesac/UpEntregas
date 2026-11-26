@@ -40,6 +40,7 @@ jobs:
           node --check web-gestor-independente/app.js
           node --check web-gestor-independente/map.js
           node --check web-gestor-independente/map-premium.js
+          node --check web-gestor-independente/pricing-ui.js
           node --check web-gestor-independente/operations-ui.js
           node scripts/test-up-manager-independent.mjs
           node scripts/test-up-manager-operations-v3.mjs
@@ -81,6 +82,7 @@ jobs:
           cp /tmp/up-maplibre/node_modules/maplibre-gl/dist/maplibre-gl.js .up-gestor-hosting/
           cp /tmp/up-maplibre/node_modules/maplibre-gl/dist/maplibre-gl.css .up-gestor-hosting/
           cp web-gestor-independente/operations-ui.js .up-gestor-hosting/
+          cp web-gestor-independente/pricing-ui.js .up-gestor-hosting/
           cp web-gestor-independente/styles.css .up-gestor-hosting/
           cp web-gestor-independente/config.js .up-gestor-hosting/
           python3 - <<'PY'

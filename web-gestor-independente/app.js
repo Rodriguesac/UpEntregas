@@ -8,6 +8,7 @@ const STORE={token:"",refreshToken:"",expires:0,user:null,page:"overview",
 const MENU=[
  {id:"overview",label:"Visão geral",short:"Início",icon:"⌂",desc:"Indicadores operacionais"},
  {id:"jobs",label:"Corridas",short:"Corridas",icon:"▤",desc:"Ofertas, eventos e andamento"},
+ {id:"pricing",label:"Tarifas e rotas",icon:"◉",desc:"Valores, espera e agrupamento"},
  {id:"map",label:"Mapa operacional",short:"Mapa",icon:"⌖",desc:"GPS recente de entregadores online"},
  {id:"merchants",label:"Lojas",icon:"▦",desc:"Estabelecimentos e pontos de coleta"},
  {id:"couriers",label:"Entregadores",short:"Entregadores",icon:"♙",desc:"Disponibilidade e situação"},
@@ -169,7 +170,7 @@ async function login(event){
  }finally{button.disabled=false;button.textContent="Entrar no UP Gestor";}
 }
 function navigation(){
- const pages=MENU.filter(x=>x.id==="map"&&!isDispatcher()?false:["finance","audit","integrations","merchants"].includes(x.id)?
+ const pages=MENU.filter(x=>x.id==="pricing"&&!isDispatcher()?false:x.id==="map"&&!isDispatcher()?false:["finance","audit","integrations","merchants"].includes(x.id)?
    (x.id==="audit"?STORE.user?.role==="OWNER":isManager()):true);
  $("#sideNav").innerHTML=pages.map(x=>'<button type="button" data-action="go" data-page="'+x.id+'" '+
   'class="'+(STORE.page===x.id?"active":"")+'"><span class="nav-icon">'+svgIcon(x.id)+
@@ -188,6 +189,7 @@ async function navigate(next,reload=true){
  if(!allowedIds.has(next))return;
  if(next==="audit"&&STORE.user?.role!=="OWNER")return;
  if(next==="map"&&!isDispatcher())return;
+ if(next==="pricing"&&!isDispatcher())return;
  if(["finance","integrations","merchants"].includes(next)&&!isManager())return;
  STORE.page=next;
  navigation();
@@ -200,7 +202,7 @@ async function load(page=STORE.page,silent=false){
  $("#connection").textContent="Atualizando";$("#connection").classList.remove("offline");
  if(!silent)$("#main").innerHTML='<div class="loading-block">Carregando dados do UP…</div>';
  const calls={overview:"dashboard",jobs:"jobs_list",map:"operations_map",merchants:"merchants_list",couriers:"couriers_list",
-  applications:"applications_list",finance:"finance",occurrences:"occurrences",audit:"audit",integrations:"integration_health"};
+  applications:"applications_list",finance:"finance",occurrences:"occurrences",audit:"audit",integrations:"integration_health",pricing:"pricing_policy_get"};
  try{
   STORE.data[page]=await call(calls[page]);
   render();
@@ -379,6 +381,7 @@ function render(){
  if(STORE.page==="overview")window.UPGestorV3?window.UPGestorV3.overview():renderOverview();
  else if(STORE.page==="jobs")window.UPGestorV3?window.UPGestorV3.jobs():renderJobs();
  else if(STORE.page==="map")window.UPGestorV3?.map();
+ else if(STORE.page==="pricing")pricingView();
  else if(STORE.page==="merchants")renderMerchants();
  else if(STORE.page==="couriers")window.UPGestorV3?window.UPGestorV3.couriers():renderCouriers();
  else if(STORE.page==="applications")renderApplications();
@@ -537,22 +540,60 @@ async function manualJobDialog(){
   });
 }
 async function offerDialog(jobId){
- const r=await call("couriers_list");
- const couriers=r.couriers.filter(x=>x.state==="APPROVED"&&x.online);
- if(!couriers.length){notice("Nenhum entregador aprovado está online.",true);return}
- const options=couriers.map(c=>'<option value="'+c.id+'">'+escapeHtml(c.display_name)+'</option>').join("");
- dialog("Enviar oferta ao entregador",'<div class="warning-note">A corrida será oferecida exclusivamente ao motorista selecionado, por tempo limitado.</div>'+
- '<label for="offerCourier">Entregador disponível</label><select class="field" id="offerCourier">'+options+'</select>'+
- '<label for="offerMinutes">Validade da oferta</label><select class="field" id="offerMinutes">'+
- '<option value="3">3 minutos</option><option value="5">5 minutos</option>'+
- '<option value="10">10 minutos</option></select>',
+ const [list,details,pricing]=await Promise.all([
+  call("couriers_list"),call("job_detail",{job_id:jobId}),call("tariff_get")]);
+ const couriers=(list.couriers||[]).filter(c=>c.state==="APPROVED"&&c.online);
+ if(!couriers.length){notice("Nenhum entregador aprovado online.",true);return}
+ const job=details.job||{},origin=job.pickup?.location,dest=job.dropoff?.location;
+ const valid=p=>p&&Number.isFinite(+p.lat)&&Number.isFinite(+p.lng)&&Math.abs(+p.lat)<85&&Math.abs(+p.lng)<=180;
+ const hasCoords=valid(origin)&&valid(dest),tariff=pricing.tariff||{},canAutomatic=hasCoords&&tariff.enabled===true;
+ let route=null;
+ dialog("Oferta com remuneração",
+ '<div class="info-note">A taxa do cliente é independente do pagamento do entregador.</div>'+
+ '<label for="offerCourier">Entregador</label><select class="field" id="offerCourier">'+
+ couriers.map(c=>'<option value="'+escapeHtml(c.id)+'">'+escapeHtml(c.display_name)+'</option>').join("")+'</select>'+
+ '<label for="offerMode">Tipo de tarifa</label><select id="offerMode" class="field">'+
+ '<option value="manual">Valor manual</option>'+(canAutomatic?'<option value="automatic">Automático por quilômetros</option>':'')+'</select>'+
+ '<label for="offerQuote">Valor manual do entregador (R$)</label>'+
+ '<input class="field" id="offerQuote" placeholder="Ex.: 9,00" inputmode="decimal">'+
+ (hasCoords?'<button id="offerRouteButton" type="button" class="button secondary">Calcular rota pelas ruas</button>':'<p class="small">Sem coordenadas. Informe valor manual.</p>')+
+ '<p id="offerRouteText" class="small">'+(canAutomatic?"Calcule a rota para habilitar o valor automático.":"Valor automático indisponível; é possível oferecer manualmente.")+'</p>'+
+ '<label for="offerMinutes">Expiração</label><select id="offerMinutes" class="field">'+
+ '<option value="3">3 minutos</option><option value="5">5 minutos</option><option value="10">10 minutos</option></select>',
  "Enviar oferta",async()=>{
-  const id=$("#offerCourier").value,mins=Number($("#offerMinutes").value);
-  if(!confirm("Enviar esta corrida para o entregador escolhido?"))return false;
-  await call("send_offer",{job_id:jobId,courier_id:id,minutes:mins});
-  notice("Oferta registrada no UP.");
-  await load("jobs");
+  const mode=$("#offerMode").value,payload={job_id:jobId,courier_id:$("#offerCourier").value,
+    minutes:Number($("#offerMinutes").value),quote_mode:mode};
+  let amount;
+  if(mode==="automatic"){
+   if(!route)throw Error("Calcule o percurso antes de enviar tarifa automática.");
+   payload.route_distance_km=route.distance_km;payload.route_duration_minutes=route.duration_minutes;
+   amount=Math.round(Math.max(Number(tariff.minimum_amount),Number(tariff.per_km)*route.distance_km)*100)/100;
+  }else{
+   const raw=$("#offerQuote").value.trim().replace(",",".");amount=Number(raw);
+   if(!raw||!Number.isFinite(amount)||amount<=0||amount>10000||Math.abs(amount*100-Math.round(amount*100))>.000001)
+    throw Error("Informe valor válido para o entregador.");
+   payload.quote_amount=amount;
+  }
+  if(!confirm("Enviar oferta de "+money(amount)+" ao entregador selecionado?"))return false;
+  await call("send_offer",payload);
+  notice("Oferta com valor registrada no UP.");await load("jobs");
  });
+ if(hasCoords){
+  $("#offerRouteButton").onclick=async()=>{
+   const btn=$("#offerRouteButton");btn.disabled=true;
+   $("#offerRouteText").textContent="Calculando trajeto nas ruas…";
+   try{
+    route=await call("route_preview",{points:[
+     {lat:+origin.lat,lng:+origin.lng},{lat:+dest.lat,lng:+dest.lng}]});
+    const amount=canAutomatic?Math.round(Math.max(Number(tariff.minimum_amount),Number(tariff.per_km)*route.distance_km)*100)/100:null;
+    $("#offerRouteText").textContent=route.distance_km.toFixed(2)+" km • "+route.duration_minutes.toFixed(1)+
+     " min estimados. "+(amount!==null?"Valor do entregador: "+money(amount)+". ":"")+
+     "Prévia OSRM; não inclui trânsito.";
+    if(canAutomatic)$("#offerMode").value="automatic";
+   }catch(e){route=null;$("#offerRouteText").textContent="Rota indisponível. Informe o valor manualmente.";notice(e.message,true)}
+   finally{btn.disabled=false}
+  };
+ }
 }
 function protectedUrl(value){
  try{const u=new URL(value);return u.protocol==="https:"?u.href:null}
