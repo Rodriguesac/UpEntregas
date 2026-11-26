@@ -4,10 +4,11 @@
 // sessionStorage, URLs or persistent cookies. A refresh requires signing in again.
 const CONFIG=window.UP_MANAGER_CONFIG||{};
 const STORE={token:"",refreshToken:"",expires:0,user:null,page:"overview",
- busy:false,filter:"all",data:{},active:false};
+ busy:false,filter:"all",data:{},active:false,mapFocus:null};
 const MENU=[
  {id:"overview",label:"Visão geral",short:"Início",icon:"⌂",desc:"Indicadores operacionais"},
  {id:"jobs",label:"Corridas",short:"Corridas",icon:"▤",desc:"Ofertas, eventos e andamento"},
+ {id:"map",label:"Mapa operacional",short:"Mapa",icon:"⌖",desc:"GPS recente de entregadores online"},
  {id:"merchants",label:"Lojas",icon:"▦",desc:"Estabelecimentos e pontos de coleta"},
  {id:"couriers",label:"Entregadores",short:"Entregadores",icon:"♙",desc:"Disponibilidade e situação"},
  {id:"applications",label:"Cadastros",icon:"▣",desc:"Análise e aprovação"},
@@ -16,15 +17,29 @@ const MENU=[
  {id:"audit",label:"Auditoria",icon:"▥",desc:"Histórico administrativo"},
  {id:"integrations",label:"Integrações",icon:"⌁",desc:"Verificação segura dos serviços"}
 ];
-const MOBILE=["overview","jobs","couriers","more"];
+const MOBILE=["overview","jobs","map","couriers","more"];
 const LABELS={
  WAITING_DRIVER:"Aguardando entregador",OFFERED:"Oferta enviada",ACCEPTED:"Aceita",
  TO_STORE:"Indo à loja",AT_STORE:"Na loja",TO_CUSTOMER:"Em rota",
  AT_CUSTOMER:"No cliente",DELIVERED:"Entregue",CANCELLED:"Cancelada",FAILED:"Falha na corrida",
  APPROVED:"Aprovado",SUSPENDED:"Suspenso",PENDING:"Pendente",
  NEEDS_CORRECTION:"Correção solicitada",REJECTED:"Reprovado",
- REQUESTED:"Solicitado",PAID:"Pago"
+ REQUESTED:"Solicitado",PAID:"Pago",DECLINED:"Recusada pelo entregador",EXPIRED:"Oferta expirada"
 };
+const ICON_PATHS={
+ overview:'<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/>',
+ jobs:'<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 13h8M8 17h4"/>',
+ map:'<path d="M3 6 9 3l6 3 6-3v15l-6 3-6-3-6 3zM9 3v15M15 6v15"/>',
+ couriers:'<circle cx="12" cy="7" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/>',
+ merchants:'<path d="M3 10h18l-2-6H5l-2 6zm2 0v11h14V10M9 21v-7h6v7"/>',
+ applications:'<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M9 8h6M8 13h8M8 17h5"/>',
+ finance:'<rect x="2" y="6" width="20" height="14" rx="3"/><path d="M2 10h20M17 15h1"/>',
+ occurrences:'<path d="M12 3 2 21h20L12 3zM12 9v5M12 18h.01"/>',
+ audit:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+ integrations:'<path d="M7 7 3 12l4 5M17 7l4 5-4 5M14 5l-4 14"/>',
+ more:'<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>'
+};
+const svgIcon=id=>'<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">'+(ICON_PATHS[id]||ICON_PATHS.more)+'</svg>';
 const $=sel=>document.querySelector(sel);
 const escapeHtml=value=>String(value??"").replace(/[&<>"']/g,ch=>({
  "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
@@ -40,7 +55,7 @@ const badge=s=>{
  const st=text(s).toUpperCase();
  const cls=["APPROVED","DELIVERED","PAID"].includes(st)?"good":
   ["WAITING_DRIVER","PENDING","REQUESTED","OFFERED","NEEDS_CORRECTION"].includes(st)?"wait":
-  ["REJECTED","CANCELLED","FAILED","SUSPENDED"].includes(st)?"bad":"blue";
+  ["REJECTED","DECLINED","CANCELLED","FAILED","SUSPENDED"].includes(st)?"bad":"blue";
  return '<span class="pill '+cls+'">'+escapeHtml(label(st))+'</span>';
 };
 const smallInfo=(title,value)=>'<div class="detail"><small>'+escapeHtml(title)+'</small><strong>'+escapeHtml(value??"—")+'</strong></div>';
@@ -67,7 +82,7 @@ function configOkay(){
 function show(id){["#configuration","#login","#app"].forEach(s=>$(s).classList.add("hidden"));$("#"+id).classList.remove("hidden");}
 function clearSession(){
  STORE.token="";STORE.refreshToken="";STORE.expires=0;STORE.user=null;STORE.data={};
- STORE.active=false;
+ STORE.active=false;STORE.mapFocus=null;
  $("#password").value="";
  show(configOkay()?"login":"configuration");
 }
@@ -157,14 +172,14 @@ function navigation(){
  const pages=MENU.filter(x=>["finance","audit","integrations","merchants"].includes(x.id)?
    (x.id==="audit"?STORE.user?.role==="OWNER":isManager()):true);
  $("#sideNav").innerHTML=pages.map(x=>'<button type="button" data-action="go" data-page="'+x.id+'" '+
-  'class="'+(STORE.page===x.id?"active":"")+'"><span class="nav-icon">'+x.icon+
+  'class="'+(STORE.page===x.id?"active":"")+'"><span class="nav-icon">'+svgIcon(x.id)+
   '</span>'+x.label+'</button>').join("");
- const more=["overview","jobs","couriers"].includes(STORE.page)?STORE.page:"more";
+ const more=["overview","jobs","map","couriers"].includes(STORE.page)?STORE.page:"more";
  $("#bottomNav").innerHTML=MOBILE.map(id=>{
   const p=pages.find(x=>x.id===id);
   const obj=id==="more"?{short:"Mais",icon:"⋯"}:p;
   return '<button type="button" data-action="go" data-page="'+id+
-   '" class="'+(more===id?"active":"")+'"><span class="nav-icon">'+obj.icon+
+   '" class="'+(more===id?"active":"")+'"><span class="nav-icon">'+svgIcon(id)+
    '</span>'+obj.short+'</button>';
  }).join("");
  $("#pageTitle").textContent=STORE.page==="more"?"Mais":pages.find(x=>x.id===STORE.page)?.label||"UP Gestor";
@@ -183,7 +198,7 @@ async function load(page=STORE.page){
  STORE.busy=true;$("#refresh").disabled=true;
  $("#connection").textContent="Atualizando";$("#connection").classList.remove("offline");
  $("#main").innerHTML='<div class="loading-block">Carregando dados do UP…</div>';
- const calls={overview:"dashboard",jobs:"jobs_list",merchants:"merchants_list",couriers:"couriers_list",
+ const calls={overview:"dashboard",jobs:"jobs_list",map:"operations_map",merchants:"merchants_list",couriers:"couriers_list",
   applications:"applications_list",finance:"finance",occurrences:"occurrences",audit:"audit",integrations:"integration_health"};
  try{
   STORE.data[page]=await call(calls[page]);
@@ -353,17 +368,18 @@ function renderIntegrations(){
 }
 function renderMore(){
  $("#main").innerHTML='<p class="page-intro">Cada função administrativa está organizada na área correspondente.</p>'+
- '<div class="more-grid">'+MENU.filter(x=>!["overview","jobs","couriers"].includes(x.id)&&
+ '<div class="more-grid">'+MENU.filter(x=>!["overview","jobs","map","couriers"].includes(x.id)&&
   (!["finance","integrations","merchants"].includes(x.id)||isManager())&&(x.id!=="audit"||STORE.user?.role==="OWNER"))
  .map(x=>'<button class="more-card" data-action="go" data-page="'+x.id+'">'+
-  x.icon+" "+x.label+"<span>"+escapeHtml(x.desc)+'</span></button>').join("")+
+  svgIcon(x.id)+" "+x.label+"<span>"+escapeHtml(x.desc)+'</span></button>').join("")+
  '<button class="more-card" data-action="logout">Sair da conta<span>Encerrar sessão administrativa</span></button></div>';
 }
 function render(){
- if(STORE.page==="overview")renderOverview();
- else if(STORE.page==="jobs")renderJobs();
+ if(STORE.page==="overview")window.UPGestorV3?window.UPGestorV3.overview():renderOverview();
+ else if(STORE.page==="jobs")window.UPGestorV3?window.UPGestorV3.jobs():renderJobs();
+ else if(STORE.page==="map")window.UPGestorV3?.map();
  else if(STORE.page==="merchants")renderMerchants();
- else if(STORE.page==="couriers")renderCouriers();
+ else if(STORE.page==="couriers")window.UPGestorV3?window.UPGestorV3.couriers():renderCouriers();
  else if(STORE.page==="applications")renderApplications();
  else if(STORE.page==="finance")renderFinance();
  else if(STORE.page==="occurrences")renderOccurrences();
