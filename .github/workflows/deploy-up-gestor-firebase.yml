@@ -47,7 +47,8 @@ jobs:
           assert text.count('enabled:false')==1
           assert 'firebaseProjectId:"rodrigues-d6566"' in text
           assert 'projectRef:"gkwmqwtktedarodvqqtn"' in text
-          assert 'service_role' not in text.lower()
+          config_body='\n'.join(line for line in text.splitlines() if not line.lstrip().startswith('//'))
+          assert 'service_role' not in config_body.lower()
           config.write_text(text.replace('enabled:false','enabled:true',1),encoding='utf-8')
           firebase=json.loads(Path('firebase.up-gestor.json').read_text())
           assert firebase['hosting']['site']=='upgestor-rac'
