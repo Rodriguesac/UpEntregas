@@ -6,6 +6,7 @@ on:
       - '.github/workflows/up-gestor-v3-check.yml'
       - 'web-gestor-independente/**'
       - 'supabase/functions/up-manager-independent/**'
+      - 'supabase/functions/up-gestor-web/**'
       - 'scripts/test-up-manager-operations-v3.mjs'
   workflow_dispatch:
 permissions:

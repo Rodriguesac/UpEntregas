@@ -46,4 +46,36 @@ assert.equal(typeof sandbox.window.UPMap.mount,"function");
 assert.equal(typeof sandbox.window.UPMap.zoom,"function");
 assert.equal(typeof sandbox.window.UPGestorV3.map,"function");
 assert.equal(typeof sandbox.window.UPGestorV3.overview,"function");
-console.log("PASS: responsive UP Gestor pages, no fake GPS, role restrictions, OSM laziness, visible-only polling");
+const hosted=readFileSync("supabase/functions/up-gestor-web/index.ts","utf8");
+assert.ok(hosted.includes("Content-Security-Policy"));
+assert.ok(hosted.includes("frame-ancestors 'none'"));
+assert.ok(hosted.includes('"index.html":"text/html; charset=utf-8"'));
+assert.ok(hosted.includes('no-store'));
+assert.ok(hosted.includes("enabled:true"),"Static site must enable web config at deploy time");
+let handler=null;
+const executable=hosted
+ .replace(/^import "[^"]+";\n/,"")
+ .replace("const MIME:Record<string,string>=","const MIME=")
+ .replace("Deno.serve((req:Request)=>","Deno.serve((req)=>");
+vm.runInNewContext(executable,{
+ Deno:{serve:fn=>{handler=fn;}},Object,URL,Response,Request
+});
+assert.equal(typeof handler,"function","Edge HTTP router not registered");
+const base="https://gkwmqwtktedarodvqqtn.supabase.co/functions/v1/up-gestor-web";
+const index=handler(new Request(base));
+assert.equal(index.status,200);
+assert.match(await index.text(),/UP Gestor/);
+const script=handler(new Request(base+"/operations-ui.js"));
+assert.equal(script.status,200);
+assert.match(await script.text(),/UPGestorV3/);
+const conf=handler(new Request(base+"/config.js"));
+assert.equal(conf.status,200);
+assert.match(await conf.text(),/enabled:true/);
+const wrong=handler(new Request(base+"/private.key"));
+assert.equal(wrong.status,404);
+const post=handler(new Request(base,{method:"POST"}));
+assert.equal(post.status,405);
+assert.match(index.headers.get("content-security-policy"),/frame-ancestors 'none'/);
+assert.equal(index.headers.get("x-content-type-options"),"nosniff");
+console.log("PASS UP Gestor v3: API roles, GPS privacy, responsive UI, Edge static HTTP routes and headers");
+
