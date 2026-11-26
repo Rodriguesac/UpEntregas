@@ -220,3 +220,6 @@ display:flex;gap:11px;align-items:flex-start;justify-content:space-between}
 @media(max-width:370px){.hero h2{font-size:21px}.stat strong{font-size:24px}
  .bottom-nav button{font-size:9px}.topbar .button{font-size:10px;padding:7px}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+
+/* SVG icons in the More menu */
+.more-card svg{width:20px;height:20px;vertical-align:middle;stroke:var(--up-forest);fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;margin-right:8px}

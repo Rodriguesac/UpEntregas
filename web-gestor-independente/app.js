@@ -169,13 +169,13 @@ async function login(event){
  }finally{button.disabled=false;button.textContent="Entrar no UP Gestor";}
 }
 function navigation(){
- const pages=MENU.filter(x=>["finance","audit","integrations","merchants"].includes(x.id)?
+ const pages=MENU.filter(x=>x.id==="map"&&!isDispatcher()?false:["finance","audit","integrations","merchants"].includes(x.id)?
    (x.id==="audit"?STORE.user?.role==="OWNER":isManager()):true);
  $("#sideNav").innerHTML=pages.map(x=>'<button type="button" data-action="go" data-page="'+x.id+'" '+
   'class="'+(STORE.page===x.id?"active":"")+'"><span class="nav-icon">'+svgIcon(x.id)+
   '</span>'+x.label+'</button>').join("");
  const more=["overview","jobs","map","couriers"].includes(STORE.page)?STORE.page:"more";
- $("#bottomNav").innerHTML=MOBILE.map(id=>{
+ $("#bottomNav").innerHTML=MOBILE.filter(id=>id==="more"||pages.some(x=>x.id===id)).map(id=>{
   const p=pages.find(x=>x.id===id);
   const obj=id==="more"?{short:"Mais",icon:"⋯"}:p;
   return '<button type="button" data-action="go" data-page="'+id+
@@ -187,6 +187,7 @@ function navigation(){
 async function navigate(next,reload=true){
  if(!allowedIds.has(next))return;
  if(next==="audit"&&STORE.user?.role!=="OWNER")return;
+ if(next==="map"&&!isDispatcher())return;
  if(["finance","integrations","merchants"].includes(next)&&!isManager())return;
  STORE.page=next;
  navigation();
