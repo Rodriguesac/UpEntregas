@@ -9,7 +9,7 @@ const jwks=createRemoteJWKSet(new URL("https://www.googleapis.com/service_accoun
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const txt=(x:unknown)=>String(x??"").trim();
 const obj=(x:any):Record<string,any>=>x&&typeof x==="object"&&!Array.isArray(x)?x:{};
-const num=(x:unknown)=>{const n=Number(x);return Number.isFinite(n)?n:NaN};
+const num=(x:unknown)=>{if(x===null||x===undefined||typeof x==="boolean"||txt(x)==="")return NaN;const n=Number(x);return Number.isFinite(n)?n:NaN};
 const isActive=(status:string)=>!["DELIVERED","CANCELLED","FAILED"].includes(status);
 function reply(body:unknown,status=200){
  return new Response(JSON.stringify(body),{status,headers:{
@@ -44,6 +44,10 @@ function document(job:any,offered:boolean){
   destinoLat:loc(obj(dest.location),"lat"),destinoLng:loc(obj(dest.location),"lng"),
   lojaLat:loc(obj(origin.location),"lat"),lojaLng:loc(obj(origin.location),"lng"),
   valorReceberCliente:Number(job.collection_amount||0),
+  repasseEntregador:typeof obj(job.metadata).courier_quote_amount==="number"&&Number.isFinite(obj(job.metadata).courier_quote_amount)&&obj(job.metadata).courier_quote_amount>=0?obj(job.metadata).courier_quote_amount:null,
+  routeDistanceKm:typeof obj(job.metadata).route_distance_km==="number"&&Number.isFinite(obj(job.metadata).route_distance_km)&&obj(job.metadata).route_distance_km>=0?obj(job.metadata).route_distance_km:null,
+  routeDurationMinutes:typeof obj(job.metadata).route_duration_minutes==="number"&&Number.isFinite(obj(job.metadata).route_duration_minutes)&&obj(job.metadata).route_duration_minutes>=0?obj(job.metadata).route_duration_minutes:null,
+  assignedAt:job.assigned_at,deliveredAt:job.delivered_at,
   totalPedido:Number(job.collection_amount||0),
   ofertaAtiva:offered,ofertaAceita:!offered,
   status:offered?"OFERTA":job.status,statusEntrega:job.status,
@@ -57,15 +61,15 @@ function sanitizedError(e:any){
  const msg=txt(e?.message);
  const errs=["job_unavailable","offer_expired_or_used","offer_not_found",
   "not_assigned_driver","invalid_driver_transition","incorrect_confirmation_code",
-  "collection_not_confirmed","location_not_allowed","invalid_location","courier_not_approved"];
+  "collection_not_confirmed","location_not_allowed","invalid_location","courier_not_approved",
+  "courier_not_available","courier_busy","invalid_received_amount"];
  return errs.find(x=>msg.includes(x))||"operation_failed";
 }
 const parseId=(v:unknown)=>txt(v).replace(/^supabase:/i,"");
 Deno.serve(async(req:Request)=>{
  if(req.method!=="POST")return reply({ok:false,error:"method_not_allowed"},405);
  if(req.headers.has("origin"))return reply({ok:false,error:"native_app_only"},403);
- if(Deno.env.get("UP_INDEPENDENT_DRIVER_ENABLED")!=="true")
-  return reply({ok:false,error:"independent_driver_disabled"},503);
+ 
  const url=Deno.env.get("SUPABASE_URL"),key=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
  if(!url||!key)return reply({ok:false,error:"service_not_configured"},503);
  const bearer=txt(req.headers.get("authorization")).replace(/^Bearer\s+/i,"");
@@ -79,12 +83,18 @@ Deno.serve(async(req:Request)=>{
   uid=txt(verified.payload.sub);
   if(!uid)throw Error("missing_uid");
  }catch{return reply({ok:false,error:"invalid_firebase_token"},401)}
- const raw=await req.text();
+ let raw:string;try{raw=await req.text()}catch{return reply({ok:false,error:"invalid_request"},400)}
  if(new TextEncoder().encode(raw).length>8192)return reply({ok:false,error:"payload_too_large"},413);
  let body:any;try{body=JSON.parse(raw)}catch{return reply({ok:false,error:"invalid_json"},400)}
+ if(!body||typeof body!=="object"||Array.isArray(body))return reply({ok:false,error:"invalid_json"},400);
  const action=txt(body.action).toLowerCase();
  const admin=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});
  try{
+  if(Deno.env.get("UP_INDEPENDENT_DRIVER_ENABLED")!=="true"){
+   const gate=await admin.from("up_settings").select("value").eq("id","runtime_driver").maybeSingle();
+   if(gate.error)throw gate.error;
+   if(gate.data?.value?.enabled!==true)return reply({ok:false,error:"independent_driver_disabled"},503);
+  }
   // Use only the UID in the cryptographically verified Firebase JWT.
   // Never accept courier IDs, roles or owner fields supplied by the client.
   const lookup=await admin.from("up_couriers").select("*").eq("firebase_uid",uid).maybeSingle();
@@ -96,6 +106,16 @@ Deno.serve(async(req:Request)=>{
   // Read-only mobile session: never trusts courier identifiers supplied by the caller.
   if(action==="session"){
    return reply({ok:true,online:courier.online===true,state:courier.state});
+  }
+  if(action==="equipment_status"){
+   const eq=obj(obj(courier.metadata).equipment);
+   const cash=Number(eq.cash_available);
+   return reply({ok:true,equipment:{
+    has_cash:eq.has_cash===true,
+    cash_available:Number.isFinite(cash)?Math.max(0,cash):0,
+    has_machine:eq.has_machine===true,
+    machine_types:txt(eq.machine_types).slice(0,80)
+   }});
   }
   if(action==="presence"){
    const upd=await admin.from("up_couriers").update({online:body.online===true,updated_at:now})
@@ -125,22 +145,34 @@ Deno.serve(async(req:Request)=>{
    return reply({ok:true});
   }
   if(action==="offer"){
+   // Refresh live availability at most once per ten minutes, never turn an offline courier online.
+   if(courier.online===true && Date.parse(txt(courier.updated_at))<Date.now()-600000){
+    const heartbeat=await admin.from("up_couriers").update({updated_at:now})
+     .eq("id",courier.id).eq("online",true).eq("state","APPROVED")
+     .lt("updated_at",new Date(Date.now()-600000).toISOString());
+    if(heartbeat.error)console.warn("UP offer heartbeat failed");
+   }
    const current=await admin.from("up_jobs").select("*,up_merchants!up_jobs_merchant_id_fkey(display_name)").eq("assigned_courier_id",courier.id)
     .not("status","in",'("DELIVERED","CANCELLED","FAILED")')
     .order("updated_at",{ascending:false}).limit(1);
    if(current.error)throw current.error;
-   if(current.data?.length)return reply({ok:true,document:document(current.data[0],false)});
-   const offers=await admin.from("up_dispatch_offers").select("job_id,expires_at")
+   if(current.data?.length)return reply({ok:true,online:courier.online===true,document:document(current.data[0],false)});
+   if(courier.online!==true)return reply({ok:true,online:false,document:null});
+   const offers=await admin.from("up_dispatch_offers").select("id,job_id,expires_at")
     .eq("courier_id",courier.id).eq("status","PENDING").gt("expires_at",now)
     .order("created_at",{ascending:true}).limit(20);
    if(offers.error)throw offers.error;
-   if(!offers.data?.length)return reply({ok:true,document:null});
+   if(!offers.data?.length)return reply({ok:true,online:true,document:null});
    const ids=offers.data.map((x:any)=>x.job_id);
    const jobs=await admin.from("up_jobs").select("*,up_merchants!up_jobs_merchant_id_fkey(display_name)").in("id",ids)
     .eq("status","OFFERED").is("assigned_courier_id",null);
    if(jobs.error)throw jobs.error;
    const job=offers.data.map((o:any)=>jobs.data?.find((j:any)=>j.id===o.job_id)).find(Boolean);
-   return reply({ok:true,document:job?document(job,true):null});
+   if(!job)return reply({ok:true,online:true,document:null});
+   const result=document(job,true);
+   const offer=offers.data.find((o:any)=>o.job_id===job.id);
+   return reply({ok:true,online:true,document:{...result,data:{...result.data,
+    offerId:offer?.id,offerExpiresAt:offer?.expires_at}}});
   }
   if(action==="history"){
    const hist=await admin.from("up_jobs").select("*,up_merchants!up_jobs_merchant_id_fkey(display_name)").eq("assigned_courier_id",courier.id)
@@ -151,17 +183,19 @@ Deno.serve(async(req:Request)=>{
   // Financial records are scoped exclusively to the UID-verified courier.
   // Read only: no payouts or money movements can be created by the mobile app.
   if(action==="wallet"){
-   const [entries,payouts]=await Promise.all([
+   const [entries,payouts,summary]=await Promise.all([
     admin.from("up_wallet_transactions")
      .select("id,kind,amount,description,created_at")
      .eq("courier_id",courier.id).order("created_at",{ascending:false}).limit(100),
     admin.from("up_payouts")
      .select("id,amount,status,requested_at,paid_at")
-     .eq("courier_id",courier.id).order("requested_at",{ascending:false}).limit(50)
+     .eq("courier_id",courier.id).order("requested_at",{ascending:false}).limit(50),
+    admin.rpc("up_courier_wallet_summary",{p_courier:courier.id})
    ]);
    if(entries.error)throw entries.error;
    if(payouts.error)throw payouts.error;
-   return reply({ok:true,transactions:entries.data||[],payouts:payouts.data||[]});
+   if(summary.error)throw summary.error;
+   return reply({ok:true,transactions:entries.data||[],payouts:payouts.data||[],summary:summary.data});
   }
   if(!uuid.test(missionId))return reply({ok:false,error:"mission_required"},400);
   const getJob=async()=>{
@@ -188,11 +222,21 @@ Deno.serve(async(req:Request)=>{
    return reply({ok:true,document:document(job,true)});
   }
   if(action==="accept"){
-   const offer=await admin.from("up_dispatch_offers").select("id")
+   // Include the accepted offer: the database decides whether this is a safe
+   // replay. Do not reject retries just because the original offer expired.
+   const offer=await admin.from("up_dispatch_offers").select("id,status")
     .eq("job_id",missionId).eq("courier_id",courier.id)
-    .eq("status","PENDING").gt("expires_at",now).limit(1);
+    .in("status",["PENDING","ACCEPTED"])
+    .order("created_at",{ascending:false}).limit(1);
    if(offer.error)throw offer.error;
    if(!offer.data?.length)return reply({ok:false,error:"offer_not_found"},409);
+   // Battery limits apply only to a new acceptance, never to a replay.
+   const tele=obj(obj(courier.metadata).telemetry);
+   const level=tele.battery_level;
+   const at=Date.parse(txt(tele.at));
+   if(offer.data[0].status!=="ACCEPTED" && typeof level==="number"&&Number.isInteger(level)&&level>=0&&level<15
+       &&Number.isFinite(at)&&at<=Date.now()+60000&&Date.now()-at<=300000)
+    return reply({ok:false,error:"battery_below_minimum",minimum_battery_percent:15},409);
    const accepted=await admin.rpc("up_driver_accept",{
     p_job:missionId,p_courier:courier.id,p_offer:offer.data[0].id
    });
@@ -221,8 +265,10 @@ Deno.serve(async(req:Request)=>{
   if(action==="stage"||action==="pickup"||action==="finish"){
    const stage=txt(body.status).toUpperCase();
    const next=action==="pickup"?"TO_CUSTOMER":action==="finish"?"DELIVERED":
-    stage==="COLETANDO"?"AT_STORE":stage==="NO_CLIENTE"?"AT_CUSTOMER":
-    stage==="EM_ENTREGA"?"TO_CUSTOMER":"TO_STORE";
+    ({COLETANDO:"AT_STORE",AT_STORE:"AT_STORE",NO_CLIENTE:"AT_CUSTOMER",
+      AT_CUSTOMER:"AT_CUSTOMER",EM_ENTREGA:"TO_CUSTOMER",TO_CUSTOMER:"TO_CUSTOMER",
+      A_CAMINHO_LOJA:"TO_STORE",TO_STORE:"TO_STORE"} as Record<string,string>)[stage];
+   if(!next)return reply({ok:false,error:"invalid_driver_transition"},422);
    const received=action==="finish"?num(body.received_amount):0;
    const result=await admin.rpc("up_driver_advance",{
     p_job:job.id,p_courier:courier.id,p_next:next,
@@ -246,3 +292,4 @@ Deno.serve(async(req:Request)=>{
   return reply({ok:false,error:"driver_api_failed"},500);
  }
 });
+

@@ -236,6 +236,7 @@ function jobCard(j){
  escapeHtml(j.recipient_name||"Cliente")+" • "+date(j.received_at)+'</p></div>'+
  badge(status)+'</div><div class="details-grid" style="margin-top:12px">'+
  smallInfo("Cobrança na entrega",money(j.collection_amount))+
+ smallInfo("Repasse do entregador",j.courier_quote_amount==null?"Não cotado":money(j.courier_quote_amount))+
  smallInfo("Entregador",j.assigned_courier_id?"Atribuído":"Não atribuído")+'</div>'+
  '<div class="actions"><button class="button secondary" data-action="view-job" data-id="'+j.id+
  '">Detalhes</button>'+(canOffer?'<button class="button primary" data-action="send-offer" data-id="'+j.id+'">Oferecer corrida</button>':"")+
@@ -294,7 +295,7 @@ function renderApplications(){
 function renderFinance(){
  const d=STORE.data.finance||{},balance=d.balances||[],payouts=d.payouts||[];
  const available=balance.reduce((a,x)=>a+Number(x.available||0),0);
- $("#main").innerHTML='<p class="page-intro">Registro e conciliação de repasses. O UP Gestor <strong>não transfere Pix automaticamente</strong>.</p>'+
+ $("#main").innerHTML='<div class="actions"><button class="button primary" data-action="tariff-settings">Configurar tarifas</button></div>'+'<p class="page-intro">Registro e conciliação de repasses. O UP Gestor <strong>não transfere Pix automaticamente</strong>.</p>'+
  (d.sampled?'<div class="warning-note">Resultados financeiros parciais: limite de registros atingido. Não confirme pagamentos sem conciliação.</div>':"")+
  '<div class="two-col">'+kpi("Disponível para repasse",money(available),"Saldo não reservado")+
  kpi("Solicitações registradas",payouts.filter(x=>x.status==="REQUESTED").length,"Aguardando confirmação")+
@@ -519,8 +520,29 @@ async function manualJobDialog(){
    await load("jobs");
   });
 }
+function quoteNumber(value){
+ const s=String(value??"").trim().replace(",",".");
+ if(!s)return null;
+ if(!/^\d+(\.\d{1,2})?$/.test(s))throw Error("Informe um número válido com até duas casas decimais.");
+ const n=Number(s);if(!Number.isFinite(n))throw Error("Valor inválido.");return n;
+}
+async function tariffSettings(){
+ const {tariff}=await call("tariff_get");
+ const t=tariff||{};
+ dialog("Tarifas do entregador",'<div class="info-note">Repasse automático = maior entre o valor mínimo e a distância da rota × valor por km. Nenhuma cobrança da loja será realizada.</div>'+
+ '<label for="tariffMin">Repasse mínimo (R$)</label><input class="field" id="tariffMin" inputmode="decimal" value="'+escapeHtml(t.minimum_amount??"")+'">'+
+ '<label for="tariffKm">Valor por km (R$)</label><input class="field" id="tariffKm" inputmode="decimal" value="'+escapeHtml(t.per_km??"")+'">'+
+ '<label><input type="checkbox" id="tariffEnabled" '+(t.enabled?"checked":"")+'> Habilitar cálculo automático</label>'+
+ '<p>Comissão, espera, devolução e cancelamento ainda exigem regras financeiras próprias.</p>',"Salvar tarifas",async()=>{
+ const minimum=quoteNumber($("#tariffMin").value),km=quoteNumber($("#tariffKm").value);
+ if(minimum===null||km===null)throw Error("Preencha os dois valores.");
+ await call("tariff_save",{minimum_amount:minimum,per_km:km,enabled:$("#tariffEnabled").checked});
+ notice("Tarifa registrada.");await load("finance");
+ });
+}
 async function offerDialog(jobId){
- const r=await call("couriers_list");
+ const [r,tariffs,details]=await Promise.all([call("couriers_list"),call("tariff_get"),call("job_detail",{job_id:jobId})]);
+ const tariff=tariffs.tariff,previous=details.job?.metadata?.courier_quote_amount;
  const couriers=r.couriers.filter(x=>x.state==="APPROVED"&&x.online);
  if(!couriers.length){notice("Nenhum entregador aprovado está online.",true);return}
  const options=couriers.map(c=>'<option value="'+c.id+'">'+escapeHtml(c.display_name)+'</option>').join("");
@@ -528,11 +550,19 @@ async function offerDialog(jobId){
  '<label for="offerCourier">Entregador disponível</label><select class="field" id="offerCourier">'+options+'</select>'+
  '<label for="offerMinutes">Validade da oferta</label><select class="field" id="offerMinutes">'+
  '<option value="3">3 minutos</option><option value="5">5 minutos</option>'+
- '<option value="10">10 minutos</option></select>',
+ '<option value="10">10 minutos</option></select>'+
+ '<label for="quoteMode">Cotação do repasse</label><select class="field" id="quoteMode"><option value="manual">Valor manual</option>'+(tariff?.enabled?'<option value="automatic">Tarifa por km</option>':"")+'</select>'+
+ '<label for="quoteAmount">Repasse manual (R$)</label><input class="field" id="quoteAmount" inputmode="decimal" value="'+escapeHtml(previous??"")+'">'+
+ '<label for="quoteDistance">Distância da rota (km, opcional no modo manual)</label><input class="field" id="quoteDistance" inputmode="decimal">'+
+ '<label for="quoteDuration">Tempo estimado da rota (min, opcional)</label><input class="field" id="quoteDuration" inputmode="decimal">'+
+ '<p>Use distância de rota verificada, não distância em linha reta. O repasse é separado do valor cobrado do cliente.</p>',
  "Enviar oferta",async()=>{
   const id=$("#offerCourier").value,mins=Number($("#offerMinutes").value);
   if(!confirm("Enviar esta corrida para o entregador escolhido?"))return false;
-  await call("send_offer",{job_id:jobId,courier_id:id,minutes:mins});
+  const mode=$("#quoteMode").value,amount=quoteNumber($("#quoteAmount").value),distance=quoteNumber($("#quoteDistance").value),duration=quoteNumber($("#quoteDuration").value);
+  if(mode==="manual"&&(amount===null||amount<=0))throw Error("Informe o repasse positivo da corrida.");
+  if(mode==="automatic"&&(distance===null||distance<=0))throw Error("Informe a distância da rota.");
+  await call("send_offer",{job_id:jobId,courier_id:id,minutes:mins,quote_mode:mode,quote_amount:mode==="manual"?amount:null,route_distance_km:distance,route_duration_minutes:duration});
   notice("Oferta registrada no UP.");
   await load("jobs");
  });
@@ -637,6 +667,7 @@ document.addEventListener("click",async event=>{
   else if(action==="send-offer")await offerDialog(target.dataset.id);
   else if(action==="review-application")await reviewDialog(target.dataset.id);
   else if(action==="driver-state")await driverState(target.dataset.id,target.dataset.state,target.dataset.reviewRequired==="true");
+  else if(action==="tariff-settings")await tariffSettings();
   else if(action==="wallet")await walletDialog(target.dataset.id);
   else if(action==="payout")payoutDialog(target.dataset.id);
   else if(action==="mark-paid")confirmPayout(target.dataset.id);

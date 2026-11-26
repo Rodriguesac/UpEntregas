@@ -35,7 +35,7 @@ Deno.serve(async req=>{
  const hosts=(Deno.env.get("UP_MANAGER_ALLOWED_ORIGINS")||"").split(",").map(x=>x.trim()).filter(Boolean);
  if(!hosts.includes("https://appassets.androidplatform.net"))hosts.push("https://appassets.androidplatform.net");
  // Site web oficial do UP Gestor; requer Firebase JWT e papel de gestor no banco independente.
- for(const allowed of ["https://upgestor-rac.web.app","https://upgestor-rac.firebaseapp.com"])
+ for(const allowed of ["https://upgestor-rac.web.app","https://upgestor-rac.firebaseapp.com","https://rodrigues-logistica.netlify.app","https://upgestor-rac.netlify.app","https://rodrigueslogistica.web.app"])
   if(!hosts.includes(allowed))hosts.push(allowed);
  if(!hosts.length||!origin||!hosts.includes(origin))return fail(origin,403,"origin_not_allowed");
  if(req.method==="OPTIONS")return new Response(null,{status:204,headers:cors(origin)});
@@ -257,10 +257,10 @@ Deno.serve(async req=>{
   }
   if(action==="jobs_list"){
    const r=await db.from("up_jobs")
-    .select("id,merchant_order_code,merchant_order_id,recipient_name,collection_amount,status,assigned_courier_id,received_at,updated_at,delivered_at")
+    .select("id,merchant_order_code,merchant_order_id,recipient_name,collection_amount,status,assigned_courier_id,received_at,updated_at,delivered_at,metadata")
     .order("updated_at",{ascending:false}).limit(250);
    if(r.error)throw r.error;
-   return reply(origin,{ok:true,jobs:r.data||[]});
+   return reply(origin,{ok:true,jobs:(r.data||[]).map(({metadata,...job}:any)=>({...job,courier_quote_amount:metadata?.courier_quote_amount??null,quote_mode:metadata?.quote_mode??null}))});
   }
   if(action==="job_detail"){
    const jobId=id(body.job_id);
@@ -361,12 +361,34 @@ Deno.serve(async req=>{
    if(r.error)throw r.error;
    return reply(origin,{ok:true,updated:r.data===true});
   }
+  if(action==="tariff_get"){
+   authorizeRole(role,operatingRoles);
+   const r=await db.from("up_tariff_settings").select("minimum_amount,per_km,enabled,updated_at").eq("id",1).maybeSingle();
+   if(r.error)throw r.error;
+   return reply(origin,{ok:true,tariff:r.data});
+  }
+  if(action==="tariff_save"){
+   authorizeRole(role,privateRoles);
+   const minimum=body.minimum_amount,perKm=body.per_km;
+   if(typeof minimum!=="number"||typeof perKm!=="number"||typeof body.enabled!=="boolean"||!Number.isFinite(minimum)||!Number.isFinite(perKm)||minimum<0||minimum>500||perKm<0||perKm>100||Math.abs(Math.round(minimum*100)-minimum*100)>0.000001||Math.abs(Math.round(perKm*100)-perKm*100)>0.000001)
+    return fail(origin,422,"invalid_tariff");
+   const r=await db.rpc("up_tariff_save",{p_minimum:minimum,p_per_km:perKm,p_enabled:body.enabled,p_actor:uid});
+   if(r.error)throw r.error;
+   return reply(origin,{ok:true,tariff:r.data});
+  }
   if(action==="send_offer"){
    authorizeRole(role,operatingRoles);
    const mins=Number(body.minutes??3);
    if(!Number.isInteger(mins)||mins<1||mins>10)return fail(origin,422,"invalid_expiration");
-   const r=await db.rpc("up_manager_create_offer",{
-    p_job:id(body.job_id),p_courier:id(body.courier_id),p_manager:uid,p_minutes:mins
+   const mode=body.quote_mode;
+   if(mode!=="manual"&&mode!=="automatic")return fail(origin,422,"quote_required");
+   const numeric=(v:unknown)=>typeof v==="number"&&Number.isFinite(v)?v:null;
+   const amount=numeric(body.quote_amount),distance=numeric(body.route_distance_km),duration=numeric(body.route_duration_minutes);
+   if((body.quote_amount!=null&&amount===null)||(body.route_distance_km!=null&&distance===null)||(body.route_duration_minutes!=null&&duration===null))
+    return fail(origin,422,"invalid_quote");
+   const r=await db.rpc("up_manager_create_quoted_offer",{
+    p_job:id(body.job_id),p_courier:id(body.courier_id),p_manager:uid,p_minutes:mins,
+    p_mode:mode,p_amount:amount,p_distance:distance,p_duration:duration
    });
    if(r.error)throw r.error;
    return reply(origin,{ok:true,offer:r.data?.[0]||null});
@@ -444,7 +466,7 @@ Deno.serve(async req=>{
    "job_unavailable","job_already_offered","courier_not_available","courier_busy",
    "invalid_manual_request","invalid_delivery_address","manual_request_conflict",
    "merchant_not_active","pickup_not_active",
-   "insufficient_wallet_balance","invalid_payout","payout_not_found",
+   "insufficient_wallet_balance","invalid_payout","payout_not_found","invalid_tariff","invalid_quote","quote_required","tariff_not_configured","quote_already_active",
    "payout_already_paid_different_reference","payout_cannot_be_paid"
   ];
   if(safe.includes(message))return fail(origin,message==="insufficient_permissions"?403:409,message);
