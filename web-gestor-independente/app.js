@@ -193,11 +193,11 @@ async function navigate(next,reload=true){
  if(next==="more"){renderMore();return;}
  if(reload||!STORE.data[next])await load(next);else render();
 }
-async function load(page=STORE.page){
+async function load(page=STORE.page,silent=false){
  if(STORE.busy)return;
  STORE.busy=true;$("#refresh").disabled=true;
  $("#connection").textContent="Atualizando";$("#connection").classList.remove("offline");
- $("#main").innerHTML='<div class="loading-block">Carregando dados do UP…</div>';
+ if(!silent)$("#main").innerHTML='<div class="loading-block">Carregando dados do UP…</div>';
  const calls={overview:"dashboard",jobs:"jobs_list",map:"operations_map",merchants:"merchants_list",couriers:"couriers_list",
   applications:"applications_list",finance:"finance",occurrences:"occurrences",audit:"audit",integrations:"integration_health"};
  try{
@@ -627,7 +627,13 @@ document.addEventListener("click",async event=>{
  const action=target.dataset.action;
  if(action==="close-dialog"){closeDialog();return}
  if(action==="logout"){clearSession();return}
- if(action==="refresh"){await load();return}
+ if(action==="refresh"){
+  if(STORE.page==="jobs"&&STORE.filter==="rejected"){
+   delete STORE.data.offer_history;
+   await load();await loadOfferHistory();
+  }else await load();
+  return;
+ }
  if(action==="probe-integration"){
   if(STORE.busy)return;
   STORE.busy=true;target.disabled=true;target.textContent="Verificando assinatura…";
@@ -643,7 +649,22 @@ document.addEventListener("click",async event=>{
  }
 
  if(action==="go"){STORE.filter="all";await navigate(target.dataset.page);return}
- if(action==="filter"){STORE.filter=target.dataset.filter;render();return}
+ if(action==="map-zoom-in"){window.UPMap?.zoom(1);return}
+ if(action==="map-zoom-out"){window.UPMap?.zoom(-1);return}
+ if(action==="map-recenter"){window.UPMap?.recenter();return}
+ if(action==="map-select"){window.UPMap?.select(target.dataset.id);return}
+ if(action==="map-driver"){
+  if(STORE.page==="map")window.UPMap?.select(target.dataset.id);
+  else{STORE.mapFocus=target.dataset.id;await navigate("map")}
+  return;
+ }
+ if(action==="filter"){
+  STORE.filter=target.dataset.filter;render();
+  if(STORE.page==="jobs"&&STORE.filter==="rejected"){
+   try{await loadOfferHistory()}catch(e){notice(e.message||"Falha ao consultar recusas.",true)}
+  }
+  return;
+ }
  if(STORE.busy)return;
  try{
   if(action==="merchant-draft")await merchantDraftDialog();
@@ -662,4 +683,22 @@ $("#loginForm").addEventListener("submit",login);
 document.addEventListener("keydown",event=>{
  if(event.key==="Escape"&&!$("#dialogBackdrop").classList.contains("hidden"))closeDialog();
 });
+async function loadOfferHistory(){
+ if(STORE.data.offer_history)return;
+ STORE.data.offer_history=await call("offer_history");
+ if(STORE.page==="jobs"&&STORE.filter==="rejected")render();
+}
+// Respect the free-tier quota: only refresh visible operations, at most every 90 s.
+const OPERATION_REFRESH_MS=90000;
+setInterval(()=>{
+ if(!STORE.active||STORE.busy||document.hidden)return;
+ if(!$("#dialogBackdrop").classList.contains("hidden"))return;
+ if(!["overview","jobs","couriers","map"].includes(STORE.page))return;
+ load(STORE.page,true).then(async()=>{
+  if(STORE.page==="jobs"&&STORE.filter==="rejected"){
+   delete STORE.data.offer_history;
+   await loadOfferHistory();
+  }
+ }).catch(()=>{});
+},OPERATION_REFRESH_MS);
 show(configOkay()?"login":"configuration");
