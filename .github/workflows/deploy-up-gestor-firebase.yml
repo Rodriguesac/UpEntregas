@@ -33,6 +33,8 @@ jobs:
           mkdir -p .up-gestor-hosting
           cp web-gestor-independente/index.html .up-gestor-hosting/
           cp web-gestor-independente/app.js .up-gestor-hosting/
+          cp web-gestor-independente/map.js .up-gestor-hosting/
+          cp web-gestor-independente/operations-ui.js .up-gestor-hosting/
           cp web-gestor-independente/styles.css .up-gestor-hosting/
           cp web-gestor-independente/config.js .up-gestor-hosting/
           python3 - <<'PY'
