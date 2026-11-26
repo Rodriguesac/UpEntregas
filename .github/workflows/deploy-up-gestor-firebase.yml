@@ -1,6 +1,9 @@
 name: Publicar UP Gestor no Firebase Hosting (site isolado)
 on:
   workflow_dispatch:
+  push:
+    branches: [feat/tarifas-repasses-up]
+    paths: ['.github/workflows/deploy-up-gestor-firebase.yml']
 permissions:
   contents: read
 concurrency:
@@ -26,6 +29,7 @@ jobs:
           set -euo pipefail
           node --check web-gestor-independente/app.js
           node scripts/test-up-manager-independent.mjs
+          node scripts/test-up-quote-ui.mjs
       - name: Preparar arquivos públicos de forma isolada
         shell: bash
         run: |
