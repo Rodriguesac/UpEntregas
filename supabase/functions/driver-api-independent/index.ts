@@ -151,6 +151,15 @@ Deno.serve(async(req:Request)=>{
    return reply({ok:true});
   }
   if(action==="offer"){
+   // Only updated Android clients advertise grouped-offer support.
+   if(body.supports_grouping===true && obj(obj(courier.metadata).capabilities).grouping!==true){
+    const metadata={...obj(courier.metadata),
+      capabilities:{...obj(obj(courier.metadata).capabilities),grouping:true,
+        grouped_offer_protocol:1,registered_at:now}};
+    const registered=await admin.from("up_couriers").update({metadata,updated_at:now})
+      .eq("id",courier.id);
+    if(registered.error)throw registered.error;
+   }
    // Refresh live availability at most once per ten minutes, never turn an offline courier online.
    if(courier.online===true && Date.parse(txt(courier.updated_at))<Date.now()-600000){
     const heartbeat=await admin.from("up_couriers").update({updated_at:now})

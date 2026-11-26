@@ -100,6 +100,7 @@ begin
  grouped:=found;
  if grouped then
   if (select grouping_enabled from public.up_tariff_settings where id=1) is distinct from true
+    or coalesce(courier.metadata->'capabilities'->>'grouping','false')<>'true'
     or exists(select 1 from public.up_jobs active
       where active.assigned_courier_id=p_courier and active.id<>p_job
       and active.status not in ('DELIVERED','CANCELLED','FAILED')
@@ -267,6 +268,7 @@ begin
    where j.assigned_courier_id=p_courier
    and j.status not in ('DELIVERED','CANCELLED','FAILED')) then
   if (select grouping_enabled from public.up_tariff_settings where id=1) is distinct from true
+    or coalesce(courier.metadata->'capabilities'->>'grouping','false')<>'true'
     or exists(select 1 from public.up_jobs active
       where active.assigned_courier_id=p_courier and active.status not in ('DELIVERED','CANCELLED','FAILED')
       and (active.status not in ('ACCEPTED','TO_STORE','AT_STORE')
