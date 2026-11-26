@@ -36,6 +36,8 @@ assert.ok(!/service_role|secret/i.test(readFileSync(root+"config.js","utf8")
  .replaceAll("service_role, HMAC, senhas, tokens de sessão ou segredos", "")),"No secret in config");
 assert.ok(!/fetch\(/.test(map),"Map can only load public image tiles");
 assert.ok(map.includes("tile.openstreetmap.org"),"Map must attribute tile provider");
+assert.ok(map.includes('referrerPolicy="strict-origin-when-cross-origin"'),"Tiles must send a valid origin to OSM");
+assert.equal(JSON.parse(readFileSync(new URL("../firebase.up-gestor.json",import.meta.url),"utf8")).hosting.headers[0].headers.find(h=>h.key==="Referrer-Policy")?.value,"strict-origin-when-cross-origin","Firebase header must preserve a valid tile origin");
 assert.ok(map.includes("openstreetmap.org/copyright"),"Attribution link missing");
 assert.ok(map.includes("state.items.length"),"Do not load maps without real positions");
 assert.ok(css.includes("grid-template-columns:repeat(5"),"5 mobile nav slots required");
