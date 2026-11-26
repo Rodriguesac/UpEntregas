@@ -16,7 +16,8 @@ const MENU=[
  {id:"finance",label:"Financeiro",icon:"◈",desc:"Saldos e repasses registrados"},
  {id:"occurrences",label:"Ocorrências",icon:"⚑",desc:"Registros da operação"},
  {id:"audit",label:"Auditoria",icon:"▥",desc:"Histórico administrativo"},
- {id:"integrations",label:"Integrações",icon:"⌁",desc:"Verificação segura dos serviços"}
+ {id:"integrations",label:"Integrações",icon:"⌁",desc:"Verificação segura dos serviços"},
+ {id:"releases",label:"Atualizações do app",icon:"⇧",desc:"Canal oficial e publicação de APK"}
 ];
 const MOBILE=["overview","jobs","map","couriers","more"];
 const LABELS={
@@ -38,6 +39,7 @@ const ICON_PATHS={
  occurrences:'<path d="M12 3 2 21h20L12 3zM12 9v5M12 18h.01"/>',
  audit:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
  integrations:'<path d="M7 7 3 12l4 5M17 7l4 5-4 5M14 5l-4 14"/>',
+ releases:'<path d="M12 16V3m-5 5 5-5 5 5M4 16v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/>',
  more:'<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>'
 };
 const svgIcon=id=>'<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">'+(ICON_PATHS[id]||ICON_PATHS.more)+'</svg>';
@@ -170,7 +172,7 @@ async function login(event){
  }finally{button.disabled=false;button.textContent="Entrar no UP Gestor";}
 }
 function navigation(){
- const pages=MENU.filter(x=>x.id==="pricing"&&!isDispatcher()?false:x.id==="map"&&!isDispatcher()?false:["finance","audit","integrations","merchants"].includes(x.id)?
+ const pages=MENU.filter(x=>x.id==="releases"&&STORE.user?.role!=="OWNER"?false:x.id==="pricing"&&!isDispatcher()?false:x.id==="map"&&!isDispatcher()?false:["finance","audit","integrations","merchants"].includes(x.id)?
    (x.id==="audit"?STORE.user?.role==="OWNER":isManager()):true);
  $("#sideNav").innerHTML=pages.map(x=>'<button type="button" data-action="go" data-page="'+x.id+'" '+
   'class="'+(STORE.page===x.id?"active":"")+'"><span class="nav-icon">'+svgIcon(x.id)+
@@ -187,7 +189,7 @@ function navigation(){
 }
 async function navigate(next,reload=true){
  if(!allowedIds.has(next))return;
- if(next==="audit"&&STORE.user?.role!=="OWNER")return;
+ if(["audit","releases"].includes(next)&&STORE.user?.role!=="OWNER")return;
  if(next==="map"&&!isDispatcher())return;
  if(next==="pricing"&&!isDispatcher())return;
  if(["finance","integrations","merchants"].includes(next)&&!isManager())return;
@@ -197,6 +199,7 @@ async function navigate(next,reload=true){
  if(reload||!STORE.data[next])await load(next);else render();
 }
 async function load(page=STORE.page,silent=false){
+ if(page==="releases"&&STORE.user?.role!=="OWNER")return;
  if(STORE.busy)return;
  STORE.busy=true;$("#refresh").disabled=true;
  $("#connection").textContent="Atualizando";$("#connection").classList.remove("offline");
@@ -204,7 +207,7 @@ async function load(page=STORE.page,silent=false){
  const calls={overview:"dashboard",jobs:"jobs_list",map:"operations_map",merchants:"merchants_list",couriers:"couriers_list",
   applications:"applications_list",finance:"finance",occurrences:"occurrences",audit:"audit",integrations:"integration_health",pricing:"pricing_policy_get"};
  try{
-  STORE.data[page]=await call(calls[page]);
+  STORE.data[page]=page==="releases"?await readOfficialRelease():await call(calls[page]);
   render();
   $("#connection").textContent="Atualizado";
  }catch(e){
@@ -369,10 +372,55 @@ function renderIntegrations(){
  (flags.map(x=>renderEntry(x.label,x.enabled===true,"Habilitado","Desativado")).join("")||empty("Nenhum recurso listado."))+'</div>'+
  '<div class="warning-note">Conexão válida não comprova uma entrega real. O lançamento depende de teste completo do Android, autorização dos entregadores e callback à loja.</div>';
 }
+const UP_RELEASE_BASE="https://gkwmqwtktedarodvqqtn.supabase.co/storage/v1/object/public/up-entregador-releases";
+const UP_RELEASE_REPO="https://github.com/Rodriguesac/up-delivery";
+async function readOfficialRelease(){
+ const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),12000);
+ try{
+  const r=await fetch(UP_RELEASE_BASE+"/update.json",{cache:"no-store",credentials:"omit",signal:ctrl.signal});
+  if(!r.ok)throw Error("Canal indisponível (HTTP "+r.status+").");
+  const j=await r.json();
+  if(j.applicationId!=="com.rodriguesacai.updriver.independente"||
+    !Number.isInteger(j.versionCode)||j.versionCode<=0||j.versionCode>99999||
+    !/^\d+\.\d+\.\d+$/.test(j.version)||
+    !/^[a-f0-9]{64}$/i.test(j.sha256)||
+    !Number.isSafeInteger(j.sizeBytes)||j.sizeBytes<1||j.sizeBytes>100*1024*1024||
+    j.downloadUrl!==UP_RELEASE_BASE+"/up-entregador-"+j.versionCode+".apk")
+   throw Error("Manifesto oficial inválido.");
+  return {manifest:j};
+ }catch(e){return {error:"Não foi possível confirmar a versão publicada agora. "+(e.name==="AbortError"?"Tempo de consulta esgotado.":e.message)};}
+ finally{clearTimeout(timer);}
+}
+function renderReleases(){
+ if(STORE.user?.role!=="OWNER"){$("#main").innerHTML=empty("Acesso reservado ao proprietário.");return;}
+ const d=STORE.data.releases||{},j=d.manifest;
+ const link=(href,label,style="secondary")=>'<a class="button '+style+'" href="'+escapeHtml(href)+'" target="_blank" rel="noopener noreferrer">'+escapeHtml(label)+'</a>';
+ $("#main").innerHTML='<p class="page-intro">Central do UP Entregador • controle de versões e publicação segura pelo proprietário.</p>'+
+  '<div class="panel"><div class="section-head"><h2>Canal oficial UP</h2></div>'+
+  (j?'<div class="record-grid">'+kpi("Versão publicada",j.version,"Manifesto oficial consultado")+
+    kpi("Código da versão",String(j.versionCode),"A próxima versão deve ser superior")+
+    kpi("Tamanho",(j.sizeBytes/1048576).toFixed(2)+" MiB","APK registrado no canal")+'</div>'+
+    '<div class="detail"><small>SHA-256 do manifesto</small><div style="overflow-wrap:anywhere">'+escapeHtml(j.sha256)+'</div></div>'+
+    '<p>'+escapeHtml(String(j.notes||"").slice(0,1200))+'</p><div class="actions">'+link(j.downloadUrl,"Baixar APK publicado")+'</div>':
+    '<div class="warning-note">'+escapeHtml(d.error||"Versão ainda não consultada.")+'</div>')+
+  '<div class="actions"><button class="button secondary" data-action="refresh">Consultar versão</button>'+link(UP_RELEASE_BASE+"/update.json","Abrir manifesto")+'</div></div>'+
+  '<div class="panel"><div class="section-head"><h2>Publicar novo APK</h2></div>'+
+  '<p>Envie somente APK de produção assinado com o certificado original do aplicativo. O canal recusa versões iguais ou inferiores, pacote incompatível e assinatura incorreta.</p>'+
+  '<ol><li>Renomeie o APK para <strong>up-entregador-'+(j?String(j.versionCode+1):"CODIGO")+'.apk</strong> usando o código real da nova versão.</li>'+
+  '<li>Abra o envio privado pelo botão abaixo. Entre no GitHub com sua conta proprietária, selecione um único APK (até 20 MiB) e confirme o commit na branch main.</li>'+
+  '<li>Acompanhe a rotina de publicação. Aguarde o resultado verde e consulte a versão oficial novamente.</li></ol>'+
+  '<div class="actions">'+link(UP_RELEASE_REPO+"/upload/main/release-inbox","Enviar APK pelo GitHub","primary")+
+  link(UP_RELEASE_REPO+"/actions","Acompanhar publicação")+'</div>'+
+  '<div class="info-note">A publicação atualiza o manifesto automaticamente após as verificações. Não é necessário editar o Supabase. O upload ocorre no GitHub autenticado, sem compartilhar chaves com este painel.</div></div>'+
+  '<div class="panel"><div class="section-head"><h2>Documentação e segurança</h2></div>'+
+  '<p>Mantenha a chave de assinatura e sua senha em backup privado. Não desinstale o aplicativo para atualizar. O APK instalado continua sujeito à verificação de assinatura do Android.</p>'+
+  '<div class="actions">'+link(UP_RELEASE_REPO+"/tree/main/release-inbox","Arquivos enviados")+
+  link("https://supabase.com/dashboard/project/gkwmqwtktedarodvqqtn/storage/buckets","Armazenamento oficial")+'</div></div>';
+}
 function renderMore(){
  $("#main").innerHTML='<p class="page-intro">Cada função administrativa está organizada na área correspondente.</p>'+
  '<div class="more-grid">'+MENU.filter(x=>!["overview","jobs","map","couriers"].includes(x.id)&&
-  (!["finance","integrations","merchants"].includes(x.id)||isManager())&&(x.id!=="audit"||STORE.user?.role==="OWNER"))
+  (!["finance","integrations","merchants"].includes(x.id)||isManager())&&(!["audit","releases"].includes(x.id)||STORE.user?.role==="OWNER"))
  .map(x=>'<button class="more-card" data-action="go" data-page="'+x.id+'">'+
   svgIcon(x.id)+" "+x.label+"<span>"+escapeHtml(x.desc)+'</span></button>').join("")+
  '<button class="more-card" data-action="logout">Sair da conta<span>Encerrar sessão administrativa</span></button></div>';
@@ -389,6 +437,7 @@ function render(){
  else if(STORE.page==="occurrences")renderOccurrences();
  else if(STORE.page==="audit")renderAudit();
  else if(STORE.page==="integrations")renderIntegrations();
+ else if(STORE.page==="releases")renderReleases();
  else renderMore();
 }
 function closeDialog(){
