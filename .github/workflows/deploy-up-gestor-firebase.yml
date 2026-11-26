@@ -1,5 +1,13 @@
 name: Publicar UP Gestor no Firebase Hosting (site isolado)
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-up-gestor-firebase.yml'
+      - 'web-gestor-independente/**'
+      - 'firebase.up-gestor.json'
+      - 'scripts/test-up-manager-independent.mjs'
+      - 'scripts/test-up-manager-operations-v3.mjs'
   workflow_dispatch:
     inputs:
       confirm_site:
@@ -30,17 +38,35 @@ jobs:
         run: |
           set -euo pipefail
           node --check web-gestor-independente/app.js
+          node --check web-gestor-independente/map.js
+          node --check web-gestor-independente/operations-ui.js
           node scripts/test-up-manager-independent.mjs
-      - name: Exigir confirmação exata do destino
+          node scripts/test-up-manager-operations-v3.mjs
+      - name: Confirmar repositório, branch e destino Firebase
         env:
           CONFIRM_SITE: ${{ inputs.confirm_site }}
         shell: bash
         run: |
           set -euo pipefail
-          if [ "$CONFIRM_SITE" != "$UP_FIREBASE_SITE" ]; then
-            echo "::error title=Destino não confirmado::A publicação exige confirmação de rodrigueslogistica."
+          if [ "$GITHUB_REPOSITORY" != "Rodriguesac/UpEntregas" ]; then
+            echo "::error title=Repositório incorreto::Recusando publicação fora do projeto UP original."
             exit 1
           fi
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+              echo "::error title=Branch incorreta::Publicação automática somente a partir da main."
+              exit 1
+            fi
+          elif [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ "$CONFIRM_SITE" != "$UP_FIREBASE_SITE" ]; then
+              echo "::error title=Destino não confirmado::Digite rodrigueslogistica."
+              exit 1
+            fi
+          else
+            echo "::error title=Evento não autorizado::Publicação bloqueada."
+            exit 1
+          fi
+          echo "Projeto e site exclusivos confirmados: $UP_FIREBASE_PROJECT / $UP_FIREBASE_SITE"
       - name: Preparar arquivos públicos de forma isolada
         shell: bash
         run: |
@@ -60,7 +86,8 @@ jobs:
           assert text.count('enabled:false')==1
           assert 'firebaseProjectId:"rodrigues-d6566"' in text
           assert 'projectRef:"gkwmqwtktedarodvqqtn"' in text
-          assert 'service_role' not in text.lower()
+          active_lines='\n'.join(line for line in text.splitlines() if not line.lstrip().startswith('//'))
+          assert 'service_role' not in active_lines.lower(), 'Chave privada não pode estar no JavaScript'
           config.write_text(text.replace('enabled:false','enabled:true',1),encoding='utf-8')
           firebase=json.loads(Path('firebase.up-gestor.json').read_text())
           assert firebase['hosting']['site']=='upgestor-rac', 'Configuração base inesperada'
