@@ -14,9 +14,22 @@ function pricingView(){
  '<section class="panel"><h2>Espera do entregador</h2>'+
  '<label for="waitBlock">Minutos por bloco</label><input class="field" id="waitBlock" type="number" min="1" max="60" step="1" value="'+(w.block_minutes??5)+'" '+(can?"":"disabled")+'>'+
  '<label for="waitMoney">Valor por bloco completo (R$)</label><input class="field" id="waitMoney" type="number" min="0" max="100" step="0.01" value="'+Number(w.block_amount??1).toFixed(2)+'" '+(can?"":"disabled")+'>'+
- (can?'<button class="button secondary" data-action="wait-save">Guardar espera</button>':'')+
+ '<label class="up-priced-check"><input id="waitEnabled" type="checkbox" '+
+ (w.enabled&&w.simulation_only===false?'checked ':'')+(can?'':'disabled')+
+ '><span>Pagar espera automaticamente ao entregador (novas corridas)</span></label>'+
+ (can?'<button class="button secondary" data-action="wait-save">Salvar regras da espera</button>':'')+
  '<p class="small">Cada agrupamento aceito reinicia a contagem. Valores já conquistados ficam registrados.</p>'+
- '<div class="up-priced-note">Parâmetros para simulação. A cobrança automática ainda NÃO está ligada à carteira.</div></section></div>'+
+ '<div class="up-priced-note">'+(d.waiting_live?
+ 'Cobrança de espera ativa para novas chegadas. Blocos incompletos não são pagos.':
+ 'Cobrança de espera desligada. Você pode testar sem lançar valores.')+
+ '</div></section></div>'+
+ '<section class="panel" style="margin-top:14px"><h2>Agrupamento de corridas</h2>'+
+ '<p class="small">Apenas para entregadores indo à loja ou aguardando a retirada, antes do primeiro pedido coletado. Somente pedidos da mesma loja. Cada aceite reinicia a tolerância de espera.</p>'+
+ '<label class="up-priced-check"><input id="groupingEnabled" type="checkbox" '+
+ (t.grouping_enabled?'checked ':'')+(can?'':'disabled')+
+ '><span>Permitir ofertas agrupadas para os entregadores com app atualizado</span></label>'+
+ (can?'<button class="button secondary" data-action="grouping-save">Salvar agrupamento</button>':'')+
+ '<div class="up-priced-note">Não há limite arbitrário de pedidos. A liberação é bloqueada após a primeira retirada. Cada oferta tem remuneração individual.</div></section>'+
  '<section class="panel" style="margin-top:14px"><h2>Simulador de rotas</h2>'+
  '<p class="small">Escolha um ponto, toque no mapa e calcule. Cliente B é opcional para simular agrupamento; não despacha nenhuma corrida.</p>'+
  '<div class="actions"><button class="button secondary" data-action="price-point" data-point="shop">Loja</button>'+
@@ -72,12 +85,12 @@ async function calculatePriceRoute(){
   $("#priceResult").textContent=r.distance_km.toFixed(2)+" km • "+r.duration_minutes.toFixed(1)+" min estimados. "+
    (b?"Menor trajeto simulado: loja, "+(selected.i?"B, A. ":"A, B. "):"")+
    (pay===null?"Tarifa não ativa. ":"Referência da tarifa: "+cash(pay)+". ")+
-   "Agrupamento real ainda não habilitado.";
+   (STORE.data.pricing?.grouping_live?"Agrupamento permitido até a primeira retirada.":"Agrupamento está desativado.");
  }catch(e){$("#priceResult").textContent="Não foi possível obter a rota.";notice(e.message,true)}
 }
 document.addEventListener("click",async e=>{
  const t=e.target.closest("[data-action]");if(!t||STORE.page!=="pricing")return;
- const a=t.dataset.action;if(!["price-point","price-route","price-clear","price-save","wait-save","wait-sim"].includes(a))return;
+ const a=t.dataset.action;if(!["price-point","price-route","price-clear","price-save","wait-save","wait-sim","grouping-save"].includes(a))return;
  try{
 
   if(a==="wait-sim"){
@@ -101,9 +114,20 @@ document.addEventListener("click",async e=>{
    notice("Tarifa gravada.");STORE.data.pricing=await call("pricing_policy_get");pricingView();
   }
   if(a==="wait-save"){
-   await call("waiting_policy_save",{block_minutes:Number($("#waitBlock").value),block_amount:Number($("#waitMoney").value)});
-   notice("Espera parametrizada. Cobrança permanece desligada.");
+   const enabled=$("#waitEnabled").checked;
+   if(!confirm(enabled?"Ativar crédito automático de espera em novas corridas? Pagará somente blocos completos e não recalculará o passado.":"Salvar espera sem cobrança automática?"))return;
+   await call("waiting_policy_save",{block_minutes:Number($("#waitBlock").value),
+     block_amount:Number($("#waitMoney").value),enabled});
+   notice(enabled?"Espera automática ativada para novos ciclos.":"Espera salva, cobrança desligada.");
    STORE.data.pricing=await call("pricing_policy_get");pricingView();
+  }
+  if(a==="grouping-save"){
+   const enabled=$("#groupingEnabled").checked;
+   if(!confirm(enabled?"Permitir agrupamentos reais antes da retirada para entregadores com app atualizado?":"Desativar novos agrupamentos? Os já aceitos continuam."))return;
+   await call("grouping_save",{enabled});
+   STORE.data.pricing=await call("pricing_policy_get");
+   notice(enabled?"Agrupamento habilitado.":"Novos agrupamentos desativados.");
+   pricingView();
   }
  }catch(err){notice(err.message||"Erro ao aplicar configuração.",true)}
 });
