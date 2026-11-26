@@ -558,10 +558,12 @@ async function offerDialog(jobId){
  '<p>Use distância de rota verificada, não distância em linha reta. O repasse é separado do valor cobrado do cliente.</p>',
  "Enviar oferta",async()=>{
   const id=$("#offerCourier").value,mins=Number($("#offerMinutes").value);
-  if(!confirm("Enviar esta corrida para o entregador escolhido?"))return false;
+  
   const mode=$("#quoteMode").value,amount=quoteNumber($("#quoteAmount").value),distance=quoteNumber($("#quoteDistance").value),duration=quoteNumber($("#quoteDuration").value);
   if(mode==="manual"&&(amount===null||amount<=0))throw Error("Informe o repasse positivo da corrida.");
   if(mode==="automatic"&&(distance===null||distance<=0))throw Error("Informe a distância da rota.");
+  const preview=mode==="manual"?amount:Math.round(Math.max(Number(tariff.minimum_amount),Number(tariff.per_km)*distance)*100)/100;
+  if(!confirm("Enviar corrida com repasse "+money(preview)+"? O servidor validará o valor."))return false;
   await call("send_offer",{job_id:jobId,courier_id:id,minutes:mins,quote_mode:mode,quote_amount:mode==="manual"?amount:null,route_distance_km:distance,route_duration_minutes:duration});
   notice("Oferta registrada no UP.");
   await load("jobs");

@@ -381,6 +381,12 @@ Deno.serve(async req=>{
    const mins=Number(body.minutes??3);
    if(!Number.isInteger(mins)||mins<1||mins>10)return fail(origin,422,"invalid_expiration");
    const mode=body.quote_mode;
+   // Preserve older clients while the new panel requires a quote.
+   if(mode==null){
+    const legacy=await db.rpc("up_manager_create_offer",{p_job:id(body.job_id),p_courier:id(body.courier_id),p_manager:uid,p_minutes:mins});
+    if(legacy.error)throw legacy.error;
+    return reply(origin,{ok:true,offer:legacy.data?.[0]||null});
+   }
    if(mode!=="manual"&&mode!=="automatic")return fail(origin,422,"quote_required");
    const numeric=(v:unknown)=>typeof v==="number"&&Number.isFinite(v)?v:null;
    const amount=numeric(body.quote_amount),distance=numeric(body.route_distance_km),duration=numeric(body.route_duration_minutes);
