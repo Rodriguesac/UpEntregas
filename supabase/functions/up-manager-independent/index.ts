@@ -236,7 +236,11 @@ Deno.serve(async req=>{
    const merchantId=id(body.merchant_id),locationId=id(body.location_id);
    const requestId=id(body.request_id),code=txt(body.order_code);
    const src=obj(body.dropoff);
-   const destination={
+   const destination: {
+    street:string;number:string;neighborhood:string;city:string;state:string;
+    complement:string;reference:string;location?:{lat:number;lng:number};
+    location_source?:string;
+   }={
     street:txt(src.street).slice(0,180),number:txt(src.number).slice(0,20),
     neighborhood:txt(src.neighborhood).slice(0,120),city:txt(src.city).slice(0,120),
     state:txt(src.state).slice(0,2),complement:txt(src.complement).slice(0,150),
