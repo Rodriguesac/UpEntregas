@@ -1,6 +1,11 @@
 name: Publicar UP Gestor no Firebase Hosting (site isolado)
 on:
   workflow_dispatch:
+    inputs:
+      confirm_site:
+        description: 'Para publicar, confirme digitando rodrigueslogistica'
+        type: string
+        required: true
 permissions:
   contents: read
 concurrency:
@@ -12,7 +17,7 @@ jobs:
     timeout-minutes: 15
     env:
       UP_FIREBASE_PROJECT: rodrigues-d6566
-      UP_FIREBASE_SITE: upgestor-rac
+      UP_FIREBASE_SITE: rodrigueslogistica
     steps:
       - name: Baixar código
         uses: actions/checkout@v4
@@ -26,6 +31,16 @@ jobs:
           set -euo pipefail
           node --check web-gestor-independente/app.js
           node scripts/test-up-manager-independent.mjs
+      - name: Exigir confirmação exata do destino
+        env:
+          CONFIRM_SITE: ${{ inputs.confirm_site }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$CONFIRM_SITE" != "$UP_FIREBASE_SITE" ]; then
+            echo "::error title=Destino não confirmado::A publicação exige confirmação de rodrigueslogistica."
+            exit 1
+          fi
       - name: Preparar arquivos públicos de forma isolada
         shell: bash
         run: |
@@ -48,10 +63,12 @@ jobs:
           assert 'service_role' not in text.lower()
           config.write_text(text.replace('enabled:false','enabled:true',1),encoding='utf-8')
           firebase=json.loads(Path('firebase.up-gestor.json').read_text())
-          assert firebase['hosting']['site']=='upgestor-rac'
+          assert firebase['hosting']['site']=='upgestor-rac', 'Configuração base inesperada'
           assert firebase['hosting']['public']=='.up-gestor-hosting'
           assert 'hosting' not in json.loads(Path('firebase.json').read_text())
-          print('Painel pronto para deploy exclusivo em upgestor-rac.web.app')
+          firebase['hosting']['site']='rodrigueslogistica'
+          Path('.up-gestor-target.json').write_text(json.dumps(firebase,indent=2,ensure_ascii=False)+'\\n',encoding='utf-8')
+          print('Preparação de publicação isolada: rodrigueslogistica.web.app')
           PY
       - name: Validar autorização de deploy
         env:
@@ -68,26 +85,23 @@ jobs:
           credentials_json: ${{ secrets.UP_FIREBASE_SERVICE_ACCOUNT_JSON }}
       - name: Instalar Firebase CLI
         run: npm install --global firebase-tools
-      - name: Criar segundo site somente se necessário
+      - name: Confirmar que o site já pertence ao projeto Firebase informado
         shell: bash
         run: |
           set -euo pipefail
           firebase hosting:sites:list --project "$UP_FIREBASE_PROJECT" --json > /tmp/up-firebase-sites.json
           python3 - <<'PY'
-          import json
+          import json,os
           data=json.load(open('/tmp/up-firebase-sites.json',encoding='utf-8'))
-          assert data.get('status')=='success', 'Não foi possível ler sites do projeto Firebase'
-          found=False
-          for site in data.get('result',[]):
-              if site.get('name','').endswith('/sites/upgestor-rac'):
-                  found=True
-          open('/tmp/up-hosting-exists','w').write('yes' if found else 'no')
+          assert data.get('status')=='success', 'Não foi possível ler os sites do projeto Firebase'
+          target=os.environ['UP_FIREBASE_SITE']
+          found=any(site.get('name','').endswith('/sites/'+target) for site in data.get('result',[]))
+          if not found:
+              raise SystemExit('Site rodrigueslogistica não existe neste projeto Firebase. Publicação bloqueada sem modificar outro site.')
+          print('O site de destino existe no projeto configurado; autorizado para etapa de publicação.')
           PY
-          if [ "$(cat /tmp/up-hosting-exists)" != "yes" ]; then
-            firebase hosting:sites:create "$UP_FIREBASE_SITE" --project "$UP_FIREBASE_PROJECT"
-          fi
       - name: Publicar APENAS site UP Gestor
         run: |
           firebase deploy --project "$UP_FIREBASE_PROJECT" \
-            --config firebase.up-gestor.json --only hosting --non-interactive
-          echo "UP Gestor: https://$UP_FIREBASE_SITE.web.app" >> "$GITHUB_STEP_SUMMARY"
+            --config .up-gestor-target.json --only hosting --non-interactive
+          echo "UP Gestor: https://${UP_FIREBASE_SITE}.web.app" >> "$GITHUB_STEP_SUMMARY"
