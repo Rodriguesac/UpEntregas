@@ -223,3 +223,12 @@ display:flex;gap:11px;align-items:flex-start;justify-content:space-between}
 
 /* SVG icons in the More menu */
 .more-card svg{width:20px;height:20px;vertical-align:middle;stroke:var(--up-forest);fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;margin-right:8px}
+
+/* OpenFreeMap motor markers (CSS only; no Google assets). */
+.up-vector-marker{display:grid;place-items:center}
+.up-vector-pin{width:37px;height:37px;background:#0baa61;color:white;font-size:17px;border:3px solid #fff;border-radius:50% 50% 50% 10%;
+  box-shadow:0 3px 9px #00382466;transform:rotate(-45deg);cursor:pointer}
+.up-vector-pin.busy{background:#f39a24}
+.up-vector-pin:hover,.up-vector-pin:focus-visible{outline:3px solid #b5f283;outline-offset:2px}
+.up-map-canvas .maplibregl-control-container{font-size:11px}
+.up-map-canvas .maplibregl-ctrl-attrib{background:#fffffff0}

@@ -39,6 +39,7 @@ jobs:
           set -euo pipefail
           node --check web-gestor-independente/app.js
           node --check web-gestor-independente/map.js
+          node --check web-gestor-independente/map-premium.js
           node --check web-gestor-independente/operations-ui.js
           node scripts/test-up-manager-independent.mjs
           node scripts/test-up-manager-operations-v3.mjs
@@ -75,6 +76,10 @@ jobs:
           cp web-gestor-independente/index.html .up-gestor-hosting/
           cp web-gestor-independente/app.js .up-gestor-hosting/
           cp web-gestor-independente/map.js .up-gestor-hosting/
+          cp web-gestor-independente/map-premium.js .up-gestor-hosting/
+          npm install --prefix /tmp/up-maplibre --no-save --ignore-scripts --no-audit --no-fund --package-lock=false maplibre-gl@5.24.1
+          cp /tmp/up-maplibre/node_modules/maplibre-gl/dist/maplibre-gl.js .up-gestor-hosting/
+          cp /tmp/up-maplibre/node_modules/maplibre-gl/dist/maplibre-gl.css .up-gestor-hosting/
           cp web-gestor-independente/operations-ui.js .up-gestor-hosting/
           cp web-gestor-independente/styles.css .up-gestor-hosting/
           cp web-gestor-independente/config.js .up-gestor-hosting/

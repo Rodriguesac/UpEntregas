@@ -5,6 +5,7 @@ const root="web-gestor-independente/";
 const app=readFileSync(root+"app.js","utf8");
 const view=readFileSync(root+"operations-ui.js","utf8");
 const map=readFileSync(root+"map.js","utf8");
+const premium=readFileSync(root+"map-premium.js","utf8");
 const page=readFileSync(root+"index.html","utf8");
 const css=readFileSync(root+"styles.css","utf8");
 const api=readFileSync("supabase/functions/up-manager-independent/index.ts","utf8");
@@ -12,6 +13,12 @@ for(const file of ["config.js","map.js","app.js","operations-ui.js"]){
  assert.ok(page.includes('<script src="'+file+'"'),"Missing loaded script "+file);
 }
 assert.ok(page.indexOf("map.js")<page.indexOf("app.js"));
+assert.ok(page.includes('<script src="map-premium.js" defer></script>'));
+assert.ok(page.includes('<script src="maplibre-gl.js" defer></script>'));
+assert.ok(premium.includes("tiles.openfreemap.org/styles/liberty"));
+assert.ok(premium.includes("const fallback = window.UPMap"));
+assert.ok(premium.includes("window.UPMap = fallback"));
+assert.ok(JSON.parse(readFileSync("firebase.up-gestor.json","utf8")).hosting.headers[0].headers.find(h=>h.key==="Content-Security-Policy").value.includes("https://tiles.openfreemap.org"));
 assert.ok(page.indexOf("app.js")<page.indexOf("operations-ui.js"));
 assert.match(page,/theme-color" content="#053e31"/);
 for(const name of ["overview","jobs","couriers","map"]){
