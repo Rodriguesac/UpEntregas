@@ -245,7 +245,9 @@
    ctx.timer=setTimeout(()=>search(query,ticket),450);
   });
   queryInput.addEventListener("keydown",event=>{if(event.key==="Escape")clearSuggestions()});
-  if(!window.maplibregl||!maplibregl.supported()){
+  const gl=window.maplibregl;
+  if(!gl||typeof gl.Map!=="function"||
+     (typeof gl.supported==="function"&&!gl.supported())){
    setText("manualMapHint","Mapa não carregou. É necessário um navegador compatível para confirmar o destino.");
    return;
   }
