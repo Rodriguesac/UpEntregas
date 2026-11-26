@@ -383,6 +383,9 @@ Deno.serve(async req=>{
    const mode=body.quote_mode;
    // Preserve older clients while the new panel requires a quote.
    if(mode==null){
+    const quoted=await db.from("up_job_quotes").select("job_id").eq("job_id",id(body.job_id)).maybeSingle();
+    if(quoted.error)throw quoted.error;
+    if(quoted.data)return fail(origin,422,"quote_required");
     const legacy=await db.rpc("up_manager_create_offer",{p_job:id(body.job_id),p_courier:id(body.courier_id),p_manager:uid,p_minutes:mins});
     if(legacy.error)throw legacy.error;
     return reply(origin,{ok:true,offer:legacy.data?.[0]||null});
