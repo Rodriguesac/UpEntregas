@@ -67,7 +67,7 @@ jobs:
           assert firebase['hosting']['public']=='.up-gestor-hosting'
           assert 'hosting' not in json.loads(Path('firebase.json').read_text())
           firebase['hosting']['site']='rodrigueslogistica'
-          Path('.up-gestor-target.json').write_text(json.dumps(firebase,indent=2,ensure_ascii=False)+'\\n',encoding='utf-8')
+          Path('.up-gestor-target.json').write_text(json.dumps(firebase,indent=2,ensure_ascii=False),encoding='utf-8')
           print('Preparação de publicação isolada: rodrigueslogistica.web.app')
           PY
       - name: Validar autorização de deploy
