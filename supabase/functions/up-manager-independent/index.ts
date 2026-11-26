@@ -35,7 +35,7 @@ Deno.serve(async req=>{
  const hosts=(Deno.env.get("UP_MANAGER_ALLOWED_ORIGINS")||"").split(",").map(x=>x.trim()).filter(Boolean);
  if(!hosts.includes("https://appassets.androidplatform.net"))hosts.push("https://appassets.androidplatform.net");
  // Site web oficial do UP Gestor; requer Firebase JWT e papel de gestor no banco independente.
- for(const allowed of ["https://upgestor-rac.web.app","https://upgestor-rac.firebaseapp.com","https://rodrigues-logistica.netlify.app","https://upgestor-rac.netlify.app","https://rodrigueslogistica.web.app,"https://gkwmqwtktedarodvqqtn.supabase.co"])
+ for(const allowed of ["https://upgestor-rac.web.app","https://upgestor-rac.firebaseapp.com","https://rodrigues-logistica.netlify.app","https://upgestor-rac.netlify.app","https://rodrigueslogistica.web.app","https://gkwmqwtktedarodvqqtn.supabase.co"])
   if(!hosts.includes(allowed))hosts.push(allowed);
  if(!hosts.length||!origin||!hosts.includes(origin))return fail(origin,403,"origin_not_allowed");
  if(req.method==="OPTIONS")return new Response(null,{status:204,headers:cors(origin)});
