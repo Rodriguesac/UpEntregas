@@ -4,9 +4,11 @@
 // No CDN JavaScript, no map library key, no automatic tracking of offline drivers.
 (()=> {
  const TILE=256,MIN=3,MAX=17;
+ // Campo Grande is the operational region default, not an inferred driver position.
+ const DEFAULT_CENTER={lat:-20.4697,lng:-54.6201};
  const state={center:null,zoom:13,fit:true,items:[],target:null,drag:null};
  const limit=(n,a,b)=>Math.max(a,Math.min(b,n));
- const valid=p=>p&&Number.isFinite(Number(p.lat))&&Number.isFinite(Number(p.lng))&&
+ const valid=p=>p&&p.lat!=null&&p.lng!=null&&Number.isFinite(Number(p.lat))&&Number.isFinite(Number(p.lng))&&
    Number(p.lat)>=-85&&Number(p.lat)<=85&&Number(p.lng)>=-180&&Number(p.lng)<=180;
  const projection=(lat,lng,z)=>{
    const n=2**z,rad=limit(lat,-85,85)*Math.PI/180;
@@ -27,7 +29,7 @@
  };
  function fit(items){
    const coords=items.filter(valid);
-   if(!coords.length){state.center=null;return}
+   if(!coords.length){state.center={...DEFAULT_CENTER};state.zoom=12;return}
    const mean=coords.reduce((a,p)=>({lat:a.lat+Number(p.lat),lng:a.lng+Number(p.lng)}),{lat:0,lng:0});
    state.center={lat:mean.lat/coords.length,lng:mean.lng/coords.length};
    const el=document.getElementById("upMapCanvas");
@@ -93,8 +95,9 @@
  function mount(items,focusId){
    const el=document.getElementById("upMapCanvas");
    state.items=Array.isArray(items)?items.filter(valid):[];
-   if(!el||!state.items.length){state.center=null;return}
+   if(!el)return;
    if(!state.center||state.fit)fit(state.items);
+   if(!state.items.length)state.target=null;
    state.fit=false;
    if(focusId)select(focusId);else draw();
    el.onpointerdown=e=>{
