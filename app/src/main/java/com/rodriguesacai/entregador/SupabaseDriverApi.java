@@ -26,7 +26,23 @@ public final class SupabaseDriverApi {
     private static final String PUBLISHABLE_KEY = BuildConfig.UP_PUBLISHABLE_KEY;
     private static final ExecutorService IO = Executors.newFixedThreadPool(3);
 
-    public Task<UpDocument> offer() { return documentCall("offer", new JSONObject()); }
+    public Task<UpDocument> offer() {
+        JSONObject body = new JSONObject();
+        put(body, "supports_grouping", true);
+        return documentCall("offer", body);
+    }
+    public Task<UpQuery> groupMissions() {
+        return call("group_missions", new JSONObject()).continueWith(task -> {
+            if (!task.isSuccessful()) throw task.getException();
+            JSONArray rows = task.getResult().optJSONArray("documents");
+            ArrayList<UpDocument> docs = new ArrayList<>();
+            if (rows != null) for (int i = 0; i < rows.length(); i++) {
+                UpDocument doc = UpDocument.fromJson(rows.optJSONObject(i));
+                if (doc != null && doc.exists()) docs.add(doc);
+            }
+            return new UpQuery(docs);
+        });
+    }
 
     public Task<UpDocument> mission(String missionId) {
         JSONObject body = new JSONObject();

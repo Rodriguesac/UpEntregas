@@ -44,6 +44,7 @@ public class MainActivity extends AppCompatActivity {
     private String driverId = "";
     private String rideId = "";
     private UpDocument ride;
+    private String lastGroupedOfferId = "";
     private ListenerRegistration offerListener;
     private ListenerRegistration routeOfferListener;
     private ListenerRegistration currentRideListener;
@@ -184,7 +185,15 @@ public class MainActivity extends AppCompatActivity {
 
         offerListener = repo.listenDirectedRides(driverId, new DriverRepository.RideCallback() {
             @Override public void onRide(UpDocument d) {
-                if (!online || hasActiveMission()) return;
+                if (!online) return;
+                if (hasActiveMission()) {
+                    if (d != null && "rides".equals(missionType) && rideId.startsWith("supabase:")
+                            && Boolean.TRUE.equals(d.getBoolean("ofertaAtiva"))
+                            && Boolean.TRUE.equals(d.getBoolean("groupingOffer"))) {
+                        showGroupOfferDialog(d);
+                    }
+                    return;
+                }
                 if (d == null) {
                     if (ride != null && Boolean.TRUE.equals(ride.getBoolean("ofertaAtiva")) && "rides".equals(missionType)) clearCurrentRide(true);
                     return;
@@ -616,7 +625,87 @@ public class MainActivity extends AppCompatActivity {
             root.addView(reject);
         } else {
             showStageButtons(status);
+            if (rideId.startsWith("supabase:")) {
+                Button groups = Ui.secondaryButton(this, "Ver pedidos agrupados");
+                groups.setOnClickListener(v -> openGroupMissions());
+                root.addView(groups);
+            }
         }
+    }
+
+    private void showGroupOfferDialog(UpDocument incoming) {
+        final String offerId = incoming.getId();
+        if (offerId == null || offerId.isEmpty() || offerId.equals(lastGroupedOfferId)
+                || isFinishing() || isDestroyed()) return;
+        lastGroupedOfferId = offerId;
+        String code = DriverRepository.first(incoming, "codigoPedido", "numeroPedido");
+        String customer = DriverRepository.first(incoming, "clienteNome", "nomeCliente");
+        double extra = firstNumber(incoming, "valorRepasseEntregador", "repasseEntregador", "valorCorrida");
+        String text = "Novo pedido #" + (code.isEmpty() ? "—" : code) +
+                (customer.isEmpty() ? "" : "\n" + customer) +
+                "\nVocê recebe: " + (extra > 0 ? formatMoney(extra) : "valor não informado") +
+                "\n\nA oferta acrescenta este pedido à rota. A espera já ganha é preservada.";
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Agrupar outra entrega?")
+                .setMessage(text)
+                .setPositiveButton("Aceitar agrupamento", (dialog, which) ->
+                        repo.acceptRide(driverId, offerId)
+                                .addOnSuccessListener(v -> {
+                                    lastGroupedOfferId = "";
+                                    toast("Pedido agrupado! Confira todas as retiradas.");
+                                    openGroupMissions();
+                                })
+                                .addOnFailureListener(e -> { lastGroupedOfferId = ""; toast(e.getMessage()); }))
+                .setNegativeButton("Recusar", (dialog, which) ->
+                        repo.rejectRide(driverId, offerId, "agrupamento recusado")
+                                .addOnFailureListener(e -> toast(e.getMessage())))
+                .setNeutralButton("Agora não", (dialog, which) -> { })
+                .show();
+    }
+
+    private void switchGroupMission(UpDocument doc) {
+        if (doc == null || !doc.exists() || !doc.getId().startsWith("supabase:")) return;
+        ride = doc;
+        rideId = doc.getId();
+        missionType = "rides";
+        Session.saveMission(this, missionType, rideId);
+        currentTab = 1;
+        listenCurrentRide();
+        render();
+    }
+
+    private void openGroupMissions() {
+        new SupabaseDriverApi().groupMissions()
+                .addOnSuccessListener(q -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    LinearLayout content = new LinearLayout(this);
+                    content.setOrientation(LinearLayout.VERTICAL);
+                    if (q == null || q.getDocuments().isEmpty()) {
+                        content.addView(Ui.muted(this, "Nenhuma entrega ativa vinculada à sua conta.", 13));
+                    } else {
+                        for (UpDocument doc : q.getDocuments()) {
+                            String code = DriverRepository.first(doc, "codigoPedido", "numeroPedido");
+                            String customer = DriverRepository.first(doc, "clienteNome", "nomeCliente");
+                            String status = DriverRepository.first(doc, "statusEntrega", "status");
+                            double fee = firstNumber(doc, "valorRepasseEntregador", "repasseEntregador", "valorCorrida");
+                            LinearLayout card = Ui.card(this);
+                            card.addView(Ui.text(this, "Pedido #" + (code.isEmpty() ? "—" : code), 16, true));
+                            card.addView(Ui.muted(this, customer + " • " + status + " • " + formatMoney(fee), 12));
+                            Button open = Ui.secondaryButton(this,
+                                    doc.getId().equals(rideId) ? "Pedido aberto" : "Abrir este pedido");
+                            open.setEnabled(!doc.getId().equals(rideId));
+                            open.setOnClickListener(v -> {
+                                if (activePanel != null) activePanel.dismiss();
+                                switchGroupMission(doc);
+                            });
+                            card.addView(open);
+                            content.addView(card);
+                        }
+                    }
+                    createSheet("Pedidos da rota",
+                            "Confira e confirme cada retirada e cada entrega individualmente.", content).show();
+                })
+                .addOnFailureListener(e -> toast("Não foi possível consultar agrupamentos: " + e.getMessage()));
     }
 
     private void showSingleRouteComplementOffer() {
@@ -1572,9 +1661,18 @@ public class MainActivity extends AppCompatActivity {
                     .addOnSuccessListener(x -> {
                         dialog.dismiss();
                         stopTracking();
+                        boolean wasSupabase = rideId.startsWith("supabase:");
                         clearCurrentRide(false);
                         toast("Entrega concluída.");
-                        render();
+                        if (wasSupabase) {
+                            new SupabaseDriverApi().groupMissions()
+                                .addOnSuccessListener(other -> {
+                                    if (other != null && !other.getDocuments().isEmpty()) {
+                                        switchGroupMission(other.getDocuments().get(0));
+                                    } else render();
+                                })
+                                .addOnFailureListener(e -> render());
+                        } else render();
                     })
                     .addOnFailureListener(e -> {
                         confirm.setEnabled(true);
