@@ -122,9 +122,23 @@ jobs:
           data=json.load(open('/tmp/up-firebase-sites.json',encoding='utf-8'))
           assert data.get('status')=='success', 'Não foi possível ler os sites do projeto Firebase'
           target=os.environ['UP_FIREBASE_SITE']
-          found=any(site.get('name','').endswith('/sites/'+target) for site in data.get('result',[]))
+          def site_records(value):
+              if isinstance(value,list):
+                  for entry in value:
+                      yield from site_records(entry)
+              elif isinstance(value,dict):
+                  if isinstance(value.get('name'),str) and '/sites/' in value['name']:
+                      yield value
+                  elif isinstance(value.get('siteId'),str):
+                      yield value
+                  for nested in value.values():
+                      if isinstance(nested,(dict,list)):
+                          yield from site_records(nested)
+          sites=list(site_records(data.get('result')))
+          found=any(site.get('name','').endswith('/sites/'+target) or site.get('siteId')==target for site in sites)
           if not found:
-              raise SystemExit('Site rodrigueslogistica não existe neste projeto Firebase. Publicação bloqueada sem modificar outro site.')
+              available=[site.get('siteId') or site.get('name','').rsplit('/',1)[-1] for site in sites]
+              raise SystemExit('O site '+target+' não está na lista do projeto '+os.environ['UP_FIREBASE_PROJECT']+'. Sites: '+', '.join(available))
           print('O site de destino existe no projeto configurado; autorizado para etapa de publicação.')
           PY
       - name: Publicar APENAS site UP Gestor
