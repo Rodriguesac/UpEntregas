@@ -30,6 +30,10 @@
           {
             "key": "Content-Security-Policy",
             "value": "default-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://gkwmqwtktedarodvqqtn.supabase.co"
+          },
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, max-age=0, must-revalidate"
           }
         ]
       },
