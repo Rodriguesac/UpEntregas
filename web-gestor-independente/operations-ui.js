@@ -118,35 +118,35 @@
    const staff=Array.isArray(result.couriers)?result.couriers:[];
    const online=Number(result.total_online||0);
    $("#main").innerHTML=hero("GPS OPERACIONAL","Mapa dos entregadores",
-      "Posições recebidas nos últimos 5 minutos de entregadores aprovados e online.")+
+      "Mapa da região sempre disponível. Marcadores exibem apenas localizações recentes e autorizadas.")+
     stats(
       stat("Online",online,"Entregadores conectados","couriers"),
       stat("Com GPS recente",staff.length,"Posições confirmadas","map"),
-      stat("GPS desatualizado",Number(result.stale_or_unavailable||0),"Sem mapa até reconectar","occurrences"),
+      stat("GPS desatualizado",Number(result.stale_or_unavailable||0),"Aguardando nova posição","occurrences"),
       stat("Em corrida",staff.filter(c=>c.mission_status).length,"Entre os localizados","jobs")
     )+
-    (staff.length?'<div class="map-layout" style="margin-top:16px">'+
+    '<div class="map-layout" style="margin-top:16px">'+
      '<section class="panel ops-map-panel">'+
-     '<div class="map-toolbar"><strong>Posições atuais</strong><div class="map-controls">'+
+     '<div class="map-toolbar"><strong>Mapa operacional</strong><div class="map-controls">'+
      '<button class="map-ctrl" type="button" data-action="map-zoom-in" aria-label="Aproximar mapa">+</button>'+
      '<button class="map-ctrl" type="button" data-action="map-zoom-out" aria-label="Afastar mapa">−</button>'+
      '<button class="map-ctrl" type="button" data-action="map-recenter" aria-label="Centralizar mapa">⌖</button>'+
      '</div></div>'+
-     '<div id="upMapCanvas" class="up-map-canvas" aria-label="Mapa operacional com os entregadores online"></div>'+
-     '<div class="map-footer"><div id="upMapSelected">Selecione um entregador para ver detalhes.</div>'+
-     '<small id="upMapZoom"></small></div></section>'+
-     '<aside class="map-list">'+staff.map(c=>
+     '<div id="upMapCanvas" class="up-map-canvas" aria-label="Mapa da região com posições GPS recentes dos entregadores"></div>'+
+     '<div class="map-footer"><div id="upMapSelected">'+
+      (staff.length?"Selecione um entregador para ver os detalhes.":
+       "Mapa da região. Sem posição GPS recente: o sistema não mostra marcadores antigos como se fossem ao vivo.")+
+     '</div><small id="upMapZoom"></small></div></section>'+
+     '<aside class="map-list">'+(staff.length?staff.map(c=>
       '<button type="button" class="map-driver" data-action="map-driver" data-id="'+escapeHtml(c.id)+'">'+
       '<strong>'+escapeHtml(c.name||"Entregador")+'</strong>'+
       '<span class="status-line"><span class="status-dot"></span>'+
       escapeHtml(c.mission_status?opsLabel(c.mission_status):"Disponível")+'</span>'+
       '<small>GPS: '+date(c.last_location_at)+'</small></button>'
-     ).join("")+'</aside></div>':
-     '<div class="panel" style="margin-top:16px">'+
-      empty("Nenhuma posição GPS recente e autorizada está disponível. O mapa não inventa localização.")+
-     '</div>')+
-    '<p class="map-note" style="margin-top:12px">Mapa © OpenStreetMap contributors. O provedor recebe as áreas consultadas. O GPS para de aparecer quando o entregador fica offline ou deixa de enviar posição recente.</p>';
-   if(staff.length&&window.UPMap)window.UPMap.mount(staff,STORE.mapFocus);
+     ).join(""):empty("Sem GPS atualizado nos últimos cinco minutos. O mapa continua disponível; a moto reaparece quando o aplicativo enviar uma posição válida."))+
+     '</aside></div>'+
+    '<p class="map-note" style="margin-top:12px">Mapa © OpenStreetMap contributors. Marcadores exibem apenas GPS recente de entregadores online. O provedor recebe as áreas consultadas.</p>';
+   if(window.UPMap)window.UPMap.mount(staff,STORE.mapFocus);
    STORE.mapFocus=null;
  }
 
