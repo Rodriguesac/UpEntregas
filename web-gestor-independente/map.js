@@ -57,7 +57,7 @@
    for(let x=startX;x<=endX;x++)for(let y=startY;y<=endY;y++){
      if(y<0||y>=world)continue;
      const tile=ele("img","up-map-tile");
-     tile.alt="";tile.decoding="async";tile.loading="lazy";tile.referrerPolicy="no-referrer";
+     tile.alt="";tile.decoding="async";tile.loading="eager";tile.referrerPolicy="strict-origin-when-cross-origin";
      tile.src="https://tile.openstreetmap.org/"+state.zoom+"/"+((x%world+world)%world)+"/"+y+".png";
      tile.style.left=Math.round(x*TILE-center.x+width/2)+"px";
      tile.style.top=Math.round(y*TILE-center.y+height/2)+"px";
