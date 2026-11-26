@@ -222,13 +222,13 @@ Deno.serve(async req=>{
   if(action==="merchant_locations"){
    authorizeRole(role,operatingRoles);
    const r=await db.from("up_merchants")
-    .select("id,display_name,state,up_merchant_locations(id,label,city,state,is_default)")
+    .select("id,display_name,state,up_merchant_locations(id,label,city,state,state_code,is_default,latitude,longitude,street,number,neighborhood)")
     .eq("state","ACTIVE").order("display_name",{ascending:true}).limit(100);
    if(r.error)throw r.error;
    return reply(origin,{ok:true,merchants:(r.data||[]).map((m:any)=>({
     id:m.id,display_name:m.display_name,
     locations:(m.up_merchant_locations||[]).filter((loc:any)=>loc.state==="ACTIVE")
-     .map((loc:any)=>({id:loc.id,label:loc.label,city:loc.city,is_default:loc.is_default}))
+     .map((loc:any)=>({id:loc.id,label:loc.label,city:loc.city,state_code:loc.state_code,is_default:loc.is_default,street:loc.street,number:loc.number,neighborhood:loc.neighborhood,latitude:loc.latitude,longitude:loc.longitude}))
    }))});
   }
   if(action==="create_manual_job"){
@@ -242,6 +242,19 @@ Deno.serve(async req=>{
     state:txt(src.state).slice(0,2),complement:txt(src.complement).slice(0,150),
     reference:txt(src.reference).slice(0,150)
    };
+   // Preserve only user-confirmed map coordinates. An approximate street result
+   // never becomes a precise delivery position without explicit confirmation.
+   if(src.location!==undefined && src.location!==null){
+    const point=obj(src.location),lat=point.lat,lng=point.lng;
+    if(typeof lat!=="number"||typeof lng!=="number"||
+      !Number.isFinite(lat)||!Number.isFinite(lng)||
+      Math.abs(lat)>85||Math.abs(lng)>180||
+      (lat===0&&lng===0)||Object.keys(point).some(k=>!["lat","lng"].includes(k)))
+      return fail(origin,422,"invalid_delivery_coordinates");
+    destination.location={lat:Math.round(lat*10000000)/10000000,
+      lng:Math.round(lng*10000000)/10000000};
+    destination.location_source="UP_MANAGER_PIN_CONFIRMED";
+   }
    const name=txt(body.recipient_name).slice(0,150);
    const phone=txt(body.recipient_phone).replace(/\D/g,"").slice(0,15);
    if(!/^\d{3,32}$/.test(code)||name.length<2||phone.length<10||

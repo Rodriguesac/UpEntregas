@@ -392,6 +392,7 @@ function render(){
  else renderMore();
 }
 function closeDialog(){
+ window.UPManualAddress?.cleanup();
  $("#dialogBackdrop").classList.add("hidden");$("#dialogContent").innerHTML="";
  $("#dialogActions").innerHTML="";
 }
@@ -498,46 +499,7 @@ async function driverDiagnosticsDialog(courierId){
  dialog("Diagnóstico UP • "+name,html);
 }
 async function manualJobDialog(){
- const result=await call("merchant_locations");
- const points=(result.merchants||[]).flatMap(m=>(m.locations||[]).map(l=>({
-  value:m.id+":"+l.id,label:m.display_name+" — "+l.label+" ("+(l.city||"Sem cidade")+")"
- })));
- if(!points.length){notice("Nenhuma loja ativa possui ponto de retirada ativo.",true);return;}
- const requestId=crypto.randomUUID();
- const opts=points.map(p=>'<option value="'+p.value+'">'+escapeHtml(p.label)+'</option>').join("");
- const field=(id,label,max=120,extra="")=>
-  '<label for="'+id+'">'+label+'</label><input class="field" id="'+id+'" maxlength="'+max+'" autocomplete="off" '+extra+'>';
- dialog("Solicitar entrega",
-  '<div class="warning-note">Sem cobrança automática. O preço do frete ainda depende da configuração de tarifas.</div>'+
-  '<label for="manualPickup">Loja e ponto de coleta</label><select class="field" id="manualPickup">'+opts+'</select>'+
-  field("manualCode","Número do pedido (somente números)",32,'inputmode="numeric"')+
-  field("manualCustomer","Nome do cliente",150)+
-  field("manualPhone","Telefone do cliente",20,'type="tel" inputmode="tel"')+
-  field("manualStreet","Rua de entrega",180)+field("manualNumber","Número",20)+
-  field("manualNeighborhood","Bairro",120)+field("manualCity","Cidade",120)+
-  field("manualState","UF",2,'placeholder="MS"'),
-  "Criar solicitação",async()=>{
-   const [merchant_id,location_id]=$("#manualPickup").value.split(":");
-   const order_code=text($("#manualCode").value);
-   const recipient_name=text($("#manualCustomer").value);
-   const recipient_phone=text($("#manualPhone").value).replace(/\D/g,"");
-   const dropoff={
-    street:text($("#manualStreet").value),number:text($("#manualNumber").value),
-    neighborhood:text($("#manualNeighborhood").value),city:text($("#manualCity").value),
-    state:text($("#manualState").value).toUpperCase()
-   };
-   if(!/^\d{3,32}$/.test(order_code))throw Error("Número de pedido inválido: use somente 3 a 32 dígitos.");
-   if(recipient_name.length<2||recipient_phone.length<10||recipient_phone.length>15||
-      dropoff.street.length<3||dropoff.city.length<2)
-    throw Error("Preencha nome, telefone, rua e cidade.");
-   if(!confirm("Solicitar entrega sem cobrança automática?"))return false;
-   const r=await call("create_manual_job",{
-    merchant_id,location_id,request_id:requestId,order_code,recipient_name,recipient_phone,dropoff
-   });
-   if(!r.job?.job_id)throw Error("UP não confirmou a solicitação.");
-   notice(r.job.already_applied?"Solicitação existente confirmada.":"Solicitação registrada no UP.");
-   await load("jobs");
-  });
+ return window.UPManualAddress.open();
 }
 async function offerDialog(jobId){
  const [list,details,pricing]=await Promise.all([
