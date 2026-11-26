@@ -35,7 +35,7 @@ Deno.serve(async req=>{
  const hosts=(Deno.env.get("UP_MANAGER_ALLOWED_ORIGINS")||"").split(",").map(x=>x.trim()).filter(Boolean);
  if(!hosts.includes("https://appassets.androidplatform.net"))hosts.push("https://appassets.androidplatform.net");
  // Site web oficial do UP Gestor; requer Firebase JWT e papel de gestor no banco independente.
- for(const allowed of ["https://upgestor-rac.web.app","https://upgestor-rac.firebaseapp.com"])
+ for(const allowed of ["https://upgestor-rac.web.app","https://upgestor-rac.firebaseapp.com","https://rodrigues-logistica.netlify.app","https://upgestor-rac.netlify.app","https://rodrigueslogistica.web.app"])
   if(!hosts.includes(allowed))hosts.push(allowed);
  if(!hosts.length||!origin||!hosts.includes(origin))return fail(origin,403,"origin_not_allowed");
  if(req.method==="OPTIONS")return new Response(null,{status:204,headers:cors(origin)});
@@ -147,7 +147,7 @@ Deno.serve(async req=>{
 
   if(action==="dashboard"){
    const [jobs,couriers,applications,payouts]=await Promise.all([
-    db.from("up_jobs").select("id,status,assigned_courier_id").limit(1000),
+    db.from("up_jobs").select("id,status,assigned_courier_id,merchant_order_code,updated_at").order("updated_at",{ascending:false}).limit(1000),
     db.from("up_couriers").select("id,online,state").limit(500),
     db.from("up_courier_applications").select("id,state").limit(500),
     db.from("up_payouts").select("id,status,amount").limit(500)
@@ -160,7 +160,12 @@ Deno.serve(async req=>{
      online:staff.filter(x=>x.online&&x.state==="APPROVED").length,
      pending:apps.filter(x=>["PENDING","NEEDS_CORRECTION"].includes(x.state)).length,
      payout_pending:paid.filter(x=>x.status==="REQUESTED").length},
-    sampled:all.length===1000});
+    sampled:all.length===1000,
+     attention:active.filter(x=>x.status==="WAITING_DRIVER"||x.status==="OFFERED"||
+       (x.updated_at&&Date.now()-Date.parse(x.updated_at)>20*60*1000))
+       .slice(0,8).map(x=>({id:x.id,code:txt(x.merchant_order_code).slice(0,45),
+         status:x.status,updated_at:x.updated_at||null,
+         assigned:x.assigned_courier_id!=null}))});
   }
   // Authenticated UP dispatchers only; no keys or internal IDs from the browser are trusted.
   // Novas lojas começam como rascunho e exigem liberação administrativa posterior.
@@ -257,10 +262,10 @@ Deno.serve(async req=>{
   }
   if(action==="jobs_list"){
    const r=await db.from("up_jobs")
-    .select("id,merchant_order_code,merchant_order_id,recipient_name,collection_amount,status,assigned_courier_id,received_at,updated_at,delivered_at")
+    .select("id,merchant_order_code,merchant_order_id,recipient_name,collection_amount,status,assigned_courier_id,received_at,updated_at,delivered_at,metadata")
     .order("updated_at",{ascending:false}).limit(250);
    if(r.error)throw r.error;
-   return reply(origin,{ok:true,jobs:r.data||[]});
+   return reply(origin,{ok:true,jobs:(r.data||[]).map(({metadata,...job}:any)=>({...job,courier_quote_amount:metadata?.courier_quote_amount??null,quote_mode:metadata?.quote_mode??null}))});
   }
   if(action==="job_detail"){
    const jobId=id(body.job_id);
@@ -316,6 +321,69 @@ Deno.serve(async req=>{
     note:"Sem coordenadas, contatos, chaves privadas ou tokens do entregador."
    }});
   }
+
+  // Dispatchers can see fresh live GPS only while the approved courier is online.
+  // No offline tracking, contacts, customer data or route history is returned.
+  if(action==="operations_map"){
+   authorizeRole(role,operatingRoles);
+   const r=await db.from("up_couriers")
+     .select("id,display_name,online,state,tracking_enabled,last_lat,last_lng,last_location_at")
+     .eq("online",true).eq("state","APPROVED").limit(200);
+   if(r.error)throw r.error;
+   const now=Date.now(),staff=r.data||[];
+   const fresh=staff.filter((c:any)=>{
+     const t=Date.parse(txt(c.last_location_at));
+     const lat=Number(c.last_lat),lng=Number(c.last_lng);
+     return c.tracking_enabled===true&&Number.isFinite(t)&&t<=now+30000&&
+       now-t<=5*60*1000&&Number.isFinite(lat)&&Number.isFinite(lng)&&
+       lat>=-85&&lat<=85&&lng>=-180&&lng<=180&&!(lat===0&&lng===0);
+   });
+   const busyById:Record<string,string>={};
+   if(fresh.length){
+     const jobs=await db.from("up_jobs").select("assigned_courier_id,status")
+       .in("assigned_courier_id",fresh.map((c:any)=>c.id))
+       .not("status","in",'("DELIVERED","CANCELLED","FAILED")').limit(250);
+     if(jobs.error)throw jobs.error;
+     for(const job of jobs.data||[])if(job.assigned_courier_id)
+       busyById[job.assigned_courier_id]=job.status;
+   }
+   return reply(origin,{ok:true,refreshed_at:new Date(now).toISOString(),
+     total_online:staff.length,stale_or_unavailable:staff.length-fresh.length,
+     couriers:fresh.map((c:any)=>({
+       id:c.id,name:txt(c.display_name).slice(0,90),
+       lat:Number(c.last_lat),lng:Number(c.last_lng),
+       last_location_at:c.last_location_at,mission_status:busyById[c.id]||null
+     }))
+   });
+  }
+
+  // Rejections and expiry events: never count them as completed or earned rides.
+  if(action==="offer_history"){
+   authorizeRole(role,operatingRoles);
+   const offers=await db.from("up_dispatch_offers")
+     .select("id,job_id,courier_id,status,created_at,responded_at,expires_at")
+     .in("status",["DECLINED","EXPIRED"])
+     .order("created_at",{ascending:false}).limit(120);
+   if(offers.error)throw offers.error;
+   const list=offers.data||[];
+   if(!list.length)return reply(origin,{ok:true,offers:[]});
+   const jobIds=[...new Set(list.map((o:any)=>o.job_id).filter(Boolean))];
+   const courierIds=[...new Set(list.map((o:any)=>o.courier_id).filter(Boolean))];
+   const [jobs,couriers]=await Promise.all([
+     db.from("up_jobs").select("id,merchant_order_code").in("id",jobIds).limit(120),
+     db.from("up_couriers").select("id,display_name").in("id",courierIds).limit(120)
+   ]);
+   if(jobs.error||couriers.error)throw Error("offer_history_query_failed");
+   const codes=new Map((jobs.data||[]).map((x:any)=>[x.id,txt(x.merchant_order_code)]));
+   const names=new Map((couriers.data||[]).map((x:any)=>[x.id,txt(x.display_name)]));
+   return reply(origin,{ok:true,offers:list.map((o:any)=>({
+     id:o.id,job_id:o.job_id,
+     job_code:codes.get(o.job_id)||txt(o.job_id).slice(0,8),
+     courier:names.get(o.courier_id)||"Entregador",
+     status:o.status,created_at:o.created_at,
+     responded_at:o.responded_at,expires_at:o.expires_at
+   }))});
+  }
   if(action==="couriers_list"){
    const r=await db.from("up_couriers")
     .select("id,display_name,phone,state,online,tracking_enabled,last_location_at,vehicle,updated_at")
@@ -361,12 +429,43 @@ Deno.serve(async req=>{
    if(r.error)throw r.error;
    return reply(origin,{ok:true,updated:r.data===true});
   }
+  if(action==="tariff_get"){
+   authorizeRole(role,operatingRoles);
+   const r=await db.from("up_tariff_settings").select("minimum_amount,per_km,enabled,updated_at").eq("id",1).maybeSingle();
+   if(r.error)throw r.error;
+   return reply(origin,{ok:true,tariff:r.data});
+  }
+  if(action==="tariff_save"){
+   authorizeRole(role,privateRoles);
+   const minimum=body.minimum_amount,perKm=body.per_km;
+   if(typeof minimum!=="number"||typeof perKm!=="number"||typeof body.enabled!=="boolean"||!Number.isFinite(minimum)||!Number.isFinite(perKm)||minimum<0||minimum>500||perKm<0||perKm>100||Math.abs(Math.round(minimum*100)-minimum*100)>0.000001||Math.abs(Math.round(perKm*100)-perKm*100)>0.000001)
+    return fail(origin,422,"invalid_tariff");
+   const r=await db.rpc("up_tariff_save",{p_minimum:minimum,p_per_km:perKm,p_enabled:body.enabled,p_actor:uid});
+   if(r.error)throw r.error;
+   return reply(origin,{ok:true,tariff:r.data});
+  }
   if(action==="send_offer"){
    authorizeRole(role,operatingRoles);
    const mins=Number(body.minutes??3);
    if(!Number.isInteger(mins)||mins<1||mins>10)return fail(origin,422,"invalid_expiration");
-   const r=await db.rpc("up_manager_create_offer",{
-    p_job:id(body.job_id),p_courier:id(body.courier_id),p_manager:uid,p_minutes:mins
+   const mode=body.quote_mode;
+   // Preserve older clients while the new panel requires a quote.
+   if(mode==null){
+    const quoted=await db.from("up_job_quotes").select("job_id").eq("job_id",id(body.job_id)).maybeSingle();
+    if(quoted.error)throw quoted.error;
+    if(quoted.data)return fail(origin,422,"quote_required");
+    const legacy=await db.rpc("up_manager_create_offer",{p_job:id(body.job_id),p_courier:id(body.courier_id),p_manager:uid,p_minutes:mins});
+    if(legacy.error)throw legacy.error;
+    return reply(origin,{ok:true,offer:legacy.data?.[0]||null});
+   }
+   if(mode!=="manual"&&mode!=="automatic")return fail(origin,422,"quote_required");
+   const numeric=(v:unknown)=>typeof v==="number"&&Number.isFinite(v)?v:null;
+   const amount=numeric(body.quote_amount),distance=numeric(body.route_distance_km),duration=numeric(body.route_duration_minutes);
+   if((body.quote_amount!=null&&amount===null)||(body.route_distance_km!=null&&distance===null)||(body.route_duration_minutes!=null&&duration===null))
+    return fail(origin,422,"invalid_quote");
+   const r=await db.rpc("up_manager_create_quoted_offer",{
+    p_job:id(body.job_id),p_courier:id(body.courier_id),p_manager:uid,p_minutes:mins,
+    p_mode:mode,p_amount:amount,p_distance:distance,p_duration:duration
    });
    if(r.error)throw r.error;
    return reply(origin,{ok:true,offer:r.data?.[0]||null});
@@ -444,7 +543,7 @@ Deno.serve(async req=>{
    "job_unavailable","job_already_offered","courier_not_available","courier_busy",
    "invalid_manual_request","invalid_delivery_address","manual_request_conflict",
    "merchant_not_active","pickup_not_active",
-   "insufficient_wallet_balance","invalid_payout","payout_not_found",
+   "insufficient_wallet_balance","invalid_payout","payout_not_found","invalid_tariff","invalid_quote","quote_required","tariff_not_configured","quote_already_active",
    "payout_already_paid_different_reference","payout_cannot_be_paid"
   ];
   if(safe.includes(message))return fail(origin,message==="insufficient_permissions"?403:409,message);
